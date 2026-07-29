@@ -134,11 +134,78 @@ interval" distinction.
 - The Desktop "Sports Betting Tools" launcher needs no changes — it just
   calls this script, so the new menu appears automatically.
 
+## Done (2026-07-28): scheduled daily cloud automation — WORKING
+
+Set up GitHub CLI (`gh`, verified checksum, installed), authenticated as
+`sebastianblade3`, created repo `sebastianblade3/sports-betting-tools`
+(originally private, see below), pushed the Sports-Betting project there.
+
+Created a daily cloud routine (RemoteTrigger, id `trig_01LeubQPFubYkh1qU6diLpKW`,
+https://claude.ai/code/routines/trig_01LeubQPFubYkh1qU6diLpKW) running every
+day at 9:00 AM Pacific (`0 16 * * *` UTC). Prompt has it: find tonight's WNBA
+schedule, refresh real verified game logs + opponent points-allowed/game for
+tracked (or newly notable) players, update `nba_props_model.py`'s player
+list, run it, append results to `Match-Notes.md`, commit and push — with all
+the lessons learned tonight baked in (don't trust "today" fetch results
+without cross-verification, don't mix pace-adjusted and non-pace-adjusted
+metrics, skip injury-return small samples).
+
+**Root cause of initial failures**: repeated `403 "You don't have access to
+a repository this routine uses"` even after connecting GitHub at
+claude.ai/customize/connectors and confirming account-level GitHub App
+access. Turned out to be a **private-repo scope issue** — switching the repo
+to PUBLIC fixed it immediately. Repo is public now (contains only code +
+betting projections, no personal/financial info, considered an acceptable
+tradeoff for working automation).
+
+**Important**: the cloud agent pushes to GitHub only — the local vault copy
+here does NOT auto-update. Someone needs to `git pull` in this folder to
+bring changes down to Obsidian. Ask Claude to "pull the latest updates" next
+session and it'll sync automatically.
+
+## Done (2026-07-28): MLB props model built + extended to daily automation
+
+- **Extracted `stats_engine.py`**: pulled the shared, sport-agnostic math
+  (recency weighting, predictive stdev, shrinkage, probability) out of
+  nba_props_model.py into its own module so both sports use identical,
+  tested code rather than duplicated logic. Verified the refactor produces
+  byte-identical results to before.
+- **Built `mlb_props_model.py`** with two prop types (MLB props aren't a
+  single stat like basketball points):
+  - Pitcher strikeouts, adjusted by opposing team's K rate
+  - Batter combined H+R+RBI, adjusted by opposing starter's ERA
+  - Real verified demo data: Troy Melton (last 10 starts: [5,9,9,7,6,5,5,5,1,3]
+    via ESPN gamelog — this CORRECTED the "9 K in each of last two starts"
+    claim used earlier tonight, which turned out stale/inaccurate once
+    checked against the real table) vs Orioles (9.18 K/game, verified); Ty
+    France (last 10 games combined H+R+RBI: [2,6,2,4,0,3,4,9,2,4]) vs
+    Lorenzen (6.91 ERA, verified).
+  - League avg ERA (~4.10) moderately verified via aggregated search; league
+    avg K/game (8.4) is an explicit UNVERIFIED ESTIMATE — repeated searches
+    for a clean official number failed.
+  - **Flagged honest limitation**: the batter ERA-ratio adjustment is cruder
+    than the NBA defense adjustment — applying the full ERA ratio to a
+    combined 3-stat category overstated the effect (94.8% vs an earlier
+    qualitative ~65% estimate for the same matchup). Documented in the code
+    as a known issue to refine, not swept under the rug.
+- **Desktop launcher updated** — now offers EV calculator, NBA/WNBA model,
+  and MLB model (3 options + quit). Tested end to end.
+- **Pushed to GitHub** and **created a second daily cloud routine**
+  ("Daily MLB Props Model Update", id `trig_01RaDzAHsJaXdnGUCZAbZAXi`,
+  https://claude.ai/code/routines/trig_01RaDzAHsJaXdnGUCZAbZAXi) — same
+  9am PT schedule as the WNBA one, with all tonight's lessons (date
+  verification, fetch unreliability for "today," the batter-adjustment
+  caveat) baked into its prompt.
+
 ## ▶ RESUME HERE
 
-nba_props_model.py now runs on fully verified data end to end, 3 demo
-players, interactive mode for new ones, small-sample-uncertainty and
-matchup-history shrinkage built in. Next steps:
+Both nba_props_model.py and mlb_props_model.py run on real verified data
+end to end, share stats_engine.py, and have working daily cloud automation
+(2 separate routines, both 9am PT). Next session: `git pull` in this folder
+first to check whether BOTH automated runs (WNBA + MLB) worked overnight —
+verify new commits came in, review what each did, and specifically check
+whether the MLB routine found a better league-avg K/game number or refined
+the batter-adjustment caveat. Next steps beyond that:
 (1) add more players/opponents as worked examples, (2) consider proper
 pace-adjusted defensive rating as a future refinement (would need
 possessions/pace data per team, not yet sourced), (3) eventually build the
