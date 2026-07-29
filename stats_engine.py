@@ -93,6 +93,23 @@ def shrink_toward_general(specific_avg, specific_n, general_projection, k=5):
     return blended, weight_specific
 
 
+def dampened_ratio(value, reference, elasticity=1.0):
+    """
+    Ratio of value/reference, dampened by a fractional exponent when the
+    underlying relationship isn't fully proportional (1:1). elasticity=1.0
+    is the full raw ratio (assumes perfect proportionality); elasticity=0.0
+    means no effect at all (ratio always returns 1.0, ignoring the input
+    entirely); values in between (e.g. 0.5, a square root) reflect "this
+    factor matters, but doesn't scale linearly with the input" — useful when
+    a stat is influenced by the matchup but also by other things outside it
+    (e.g. a batter's combined H+R+RBI depends on teammates, not just the
+    opposing pitcher, so the full ERA ratio would overstate the pitcher's
+    specific influence).
+    """
+    ratio = value / reference
+    return ratio ** elasticity
+
+
 def project(games, adjustment_factor=None, half_life=5):
     """
     Returns (projection, raw_stdev, predictive_stdev, confidence_label) for

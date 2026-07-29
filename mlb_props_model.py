@@ -17,43 +17,52 @@ from stats_engine import (
     prob_over,
     shrink_toward_general,
     project,
+    dampened_ratio,
 )
 
 
-def pitcher_k_adjustment_factor(opponent_k_per_game, league_avg_k_per_game):
+def pitcher_k_adjustment_factor(opponent_k_per_game, league_avg_k_per_game, elasticity=0.7):
     """
-    Ratio of the opposing team's strikeouts/game (as hitters) to league
-    average. >1.0 means the opponent strikes out MORE than average -> good
-    matchup for the pitcher's own strikeout projection.
+    Dampened ratio of the opposing team's strikeouts/game (as hitters) to
+    league average. >1.0 means the opponent strikes out MORE than average ->
+    good matchup for the pitcher's own strikeout projection.
+
+    elasticity=0.7 (not 1.0): a pitcher's strikeouts do depend heavily on the
+    opposing lineup's whiff tendency — more directly than the batter-side
+    matchup below, since strikeouts are a head-to-head outcome between
+    pitcher and hitter. But it's still not perfectly proportional (a
+    pitcher's own specific pitch mix/stuff interacts with a lineup's
+    tendencies in ways an average doesn't capture), so some dampening still
+    applies, just less than the batter side.
     """
-    return opponent_k_per_game / league_avg_k_per_game
+    return dampened_ratio(opponent_k_per_game, league_avg_k_per_game, elasticity=elasticity)
 
 
-def batter_matchup_adjustment_factor(opponent_pitcher_era, league_avg_era):
+def batter_matchup_adjustment_factor(opponent_pitcher_era, league_avg_era, elasticity=0.5):
     """
-    Ratio of the opposing STARTING PITCHER's ERA to league average. >1.0
-    means the pitcher is WORSE than average (higher ERA) -> good matchup for
-    the batter's H+R+RBI projection.
+    Dampened ratio of the opposing STARTING PITCHER's ERA to league average.
+    >1.0 means the pitcher is WORSE than average (higher ERA) -> good
+    matchup for the batter's H+R+RBI projection.
 
     Note: this only accounts for the starter, not the bullpen the batter
     might also face later in the game — a real simplification worth
     upgrading later (would need the opposing bullpen's ERA too, weighted by
     how many innings the batter is likely to see each).
 
-    HONEST CAVEAT: applying the full ERA ratio multiplicatively to a
-    COMBINED stat (H+R+RBI) is cruder than the NBA points-vs-defense
-    adjustment was. H+R+RBI depends heavily on things unrelated to the
-    opposing starter (own team's lineup/defense support, park factors, the
-    batter's own contact skill) — a bad pitcher doesn't inflate a batter's
-    OWN hits the same direct way a weak defense inflates a scorer's points.
-    Tested against real data (Ty France vs a 6.91 ERA starter), this factor
-    produced a notably more aggressive read than an earlier same-night
-    qualitative estimate (94.8% vs ~65%) — treat this adjustment as a
-    meaningfully rougher approximation than the pitcher-strikeout one, and a
-    good candidate to refine (e.g. dampen the factor, or split into separate
-    hits/runs/RBI sub-models) before trusting it heavily.
+    elasticity=0.5 (square root, more dampened than the pitcher side's 0.7):
+    H+R+RBI mixes a directly pitcher-dependent stat (hits — closely tied to
+    ERA/WHIP) with stats that are only partially pitcher-dependent (runs and
+    RBI depend heavily on the batter's OWN teammates — who's on base, who's
+    hitting behind them — not just who's pitching). Applying the full ratio
+    (elasticity=1.0) tested at 94.8% on Ty France vs a 6.91 ERA starter,
+    notably higher than an earlier same-night qualitative ~65% estimate —
+    confirming the full ratio overstates it. 0.5 is a reasonable, tunable
+    starting point, not a precisely derived number — a real backtest against
+    actual results would let this be calibrated properly instead of guessed.
+    The real fix would be splitting into separate hits/runs/RBI sub-models
+    with their own appropriate factors; this is a scoped middle ground.
     """
-    return opponent_pitcher_era / league_avg_era
+    return dampened_ratio(opponent_pitcher_era, league_avg_era, elasticity=elasticity)
 
 
 # League averages — verification quality noted honestly per number:
