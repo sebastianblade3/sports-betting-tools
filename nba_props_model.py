@@ -1,147 +1,36 @@
 #!/usr/bin/env python3
 """
-Player prop projection model — points props, starting point for NBA/WNBA.
-
-Concepts this implements (explained inline, since we're learning as we build):
-
-1. Recency-weighted average: recent games matter more than older ones. We
-   use exponential weights so game N-1 counts more than game N-10.
-2. Standard deviation: how much a player's actual output swings around their
-   average, game to game. A player who scores 25 every night is very
-   different from one who alternates between 10 and 40, even with the same
-   average.
-3. Normal distribution probability: assuming a player's points roughly
-   follow a bell curve around their projection, we can calculate the exact
-   probability their points land over/under any given line using the
-   standard normal cumulative distribution function (CDF).
+Player prop projection model — points props, NBA/WNBA.
+Shared math (recency weighting, uncertainty, shrinkage, probability) lives in
+stats_engine.py; this file is just the NBA/WNBA-specific opponent logic.
 """
 
-import math
-
-
-def weighted_average(games, half_life=5):
-    """
-    Recency-weighted average. `games` is most-recent-first.
-    `half_life` = games until a past result's weight halves.
-    """
-    decay = math.log(2) / half_life
-    total_weight = 0.0
-    total_value = 0.0
-    for i, value in enumerate(games):
-        weight = math.exp(-decay * i)
-        total_weight += weight
-        total_value += weight * value
-    return total_value / total_weight
-
-
-def sample_stdev(games):
-    """Standard deviation of the game log — how much it swings around the mean."""
-    n = len(games)
-    mean = sum(games) / n
-    variance = sum((x - mean) ** 2 for x in games) / (n - 1)
-    return math.sqrt(variance)
-
-
-def predictive_stdev(stdev, n):
-    """
-    Widens raw game-to-game stdev to also account for uncertainty in our
-    ESTIMATE of the mean, which shrinks as sample size grows. This is the
-    standard "prediction interval" adjustment: predicting one new game has
-    to account for both the player's natural variability AND the chance our
-    average itself is off because we only have n games to estimate it from.
-
-    predictive_stdev = stdev * sqrt(1 + 1/n)
-
-    At n=10 this only widens stdev by ~5% (sqrt(1.1)=1.05) — modest. At n=3
-    it widens by ~15% (sqrt(1.33)=1.15). At n=1 it's technically undefined
-    (no estimate of variance is possible from a single point at all) — a
-    real illustration of why Collier's 1-game sample can't be modeled yet.
-    """
-    return stdev * math.sqrt(1 + 1 / n)
-
-
-def sample_size_confidence(n):
-    """Plain-English flag for how much to trust the estimate itself."""
-    if n >= 15:
-        return "HIGH confidence (large sample)"
-    elif n >= 8:
-        return "MODERATE confidence (typical last-10 sample)"
-    elif n >= 3:
-        return "LOW confidence (small sample — treat projection cautiously)"
-    else:
-        return "NOT ENOUGH DATA to estimate variance reliably"
-
-
-def normal_cdf(x, mean, stdev):
-    """P(actual value <= x), assuming a normal distribution."""
-    z = (x - mean) / (stdev * math.sqrt(2))
-    return 0.5 * (1 + math.erf(z))
-
-
-def prob_over(line, projection, stdev):
-    """P(actual points > line)."""
-    return 1 - normal_cdf(line, projection, stdev)
-
-
-def shrink_toward_general(specific_avg, specific_n, general_projection, k=5):
-    """
-    Blends a small-sample specific value (e.g. matchup history vs one
-    opponent) toward a more reliable general estimate, weighted by how much
-    specific data we actually have. This is "shrinkage" / regression to the
-    mean: a real, well-established statistical technique for not overweighting
-    small samples, even when they're directly relevant (like head-to-head
-    history), while still letting them pull the projection somewhat.
-
-    k = how many specific-sample games it takes to reach 50% trust in the
-    specific data over the general estimate. Higher k = more skeptical of
-    small samples; lower k = trusts specific data faster.
-    """
-    weight_specific = specific_n / (specific_n + k)
-    return weight_specific * specific_avg + (1 - weight_specific) * general_projection, weight_specific
+from stats_engine import (
+    weighted_average,
+    prob_over,
+    shrink_toward_general,
+    project,
+)
 
 
 def opponent_adjustment_factor(opponent_def_rating, league_avg_def_rating):
     """
-    Ratio of opponent's defensive rating (points allowed per 100 possessions)
-    to league average. >1.0 means the opponent is BELOW-average defensively
-    (allows more than average -> good matchup for the player). <1.0 means a
-    tougher-than-average defense.
+    Ratio of opponent's points-allowed/game to league average. >1.0 means
+    the opponent is BELOW-average defensively (allows more than average ->
+    good matchup for the player). <1.0 means a tougher-than-average defense.
 
-    Note: this uses TEAM-wide defensive rating as a proxy, not a position-
-    specific one (e.g. "points allowed to centers specifically"), which would
-    be more precise but harder to source reliably. Worth upgrading later.
+    Note: this uses TEAM-wide points allowed/game as a proxy, not pace-
+    adjusted per-100-possessions (more precise but harder to source reliably)
+    or position-specific defense (harder still — league DVP tables are
+    JS-rendered and couldn't be fetched reliably). Worth upgrading later.
     """
     return opponent_def_rating / league_avg_def_rating
 
 
-def project_player(games, half_life=5, opponent_def_rating=None, league_avg_def_rating=None):
-    """
-    Returns (projection, raw_stdev, predictive_stdev, confidence_label) for a
-    player given their recent game log, optionally adjusted for the specific
-    opponent's defense. Use predictive_stdev (not raw_stdev) for probability
-    calculations — it correctly accounts for small-sample uncertainty.
-    """
-    n = len(games)
-    raw_avg = weighted_average(games, half_life=half_life)
-    raw_stdev = sample_stdev(games)
-    pred_stdev = predictive_stdev(raw_stdev, n)
-    confidence = sample_size_confidence(n)
-
-    if opponent_def_rating is not None and league_avg_def_rating is not None:
-        factor = opponent_adjustment_factor(opponent_def_rating, league_avg_def_rating)
-        projection = raw_avg * factor
-    else:
-        projection = raw_avg
-
-    return projection, raw_stdev, pred_stdev, confidence
-
-
 # League average points allowed/game — VERIFIED via covers.com team defense
 # table, all 15 WNBA teams, 2026 season. Raw points allowed/game, NOT
-# pace-adjusted (per-100-possessions would be more precise but needs
-# possession/pace data we haven't sourced yet). Update this if you re-verify
-# a newer number, or if you're modeling NBA instead of WNBA once it's back
-# in season (this number is WNBA-specific).
+# pace-adjusted. Update this if you re-verify a newer number, or if you're
+# modeling NBA instead of WNBA once it's back in season (WNBA-specific).
 LEAGUE_AVG_DEF_RATING = 86.88
 
 
@@ -152,13 +41,9 @@ def analyze_player(p, league_avg_def_rating=LEAGUE_AVG_DEF_RATING):
     flat_avg = sum(games) / n
     weighted_avg = weighted_average(games)
 
-    projection_no_adj, raw_stdev, pred_stdev, confidence = project_player(games)
-    projection_adj, _, _, _ = project_player(
-        games,
-        opponent_def_rating=p["opponent_def_rating"],
-        league_avg_def_rating=league_avg_def_rating,
-    )
+    projection_no_adj, raw_stdev, pred_stdev, confidence = project(games)
     factor = opponent_adjustment_factor(p["opponent_def_rating"], league_avg_def_rating)
+    projection_adj, _, _, _ = project(games, adjustment_factor=factor)
     widening_pct = (pred_stdev / raw_stdev - 1) * 100
 
     print(f"=== {p['name']} ({p['team']}) vs {p['opponent']} ===")
@@ -187,14 +72,6 @@ def analyze_player(p, league_avg_def_rating=LEAGUE_AVG_DEF_RATING):
         p_over = prob_over(line, final_projection, pred_stdev)
         print(f"  Over {line}: {p_over:.1%} chance")
     print()
-
-
-def prompt_int(prompt):
-    while True:
-        try:
-            return int(input(prompt).strip())
-        except ValueError:
-            print("  Enter a whole number.")
 
 
 def interactive_new_player():
@@ -271,11 +148,9 @@ if __name__ == "__main__":
             "opponent_def_rating": 90.19,  # 13th of 15 — NOT worst, despite pace-adjusted DRTG saying otherwise
             # VERIFIED: Wilson vs Portland specifically this season — 32 pts
             # both June 11 and July 9. Note: July 9 is ALSO one of the 10
-            # games in the general log above (it's the "32" 5th from the
-            # left) — there's a one-game overlap between the general sample
-            # and this matchup-specific sample. Not perfectly clean
-            # statistically, but a known, disclosed simplification rather
-            # than a hidden one.
+            # games in the general log above — a one-game overlap between
+            # the general sample and this matchup-specific sample. Not
+            # perfectly clean statistically, but a disclosed simplification.
             "matchup_history": [32, 32],
         },
         {
