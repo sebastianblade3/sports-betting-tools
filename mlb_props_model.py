@@ -18,6 +18,7 @@ from stats_engine import (
     shrink_toward_general,
     project,
     dampened_ratio,
+    SITUATIONAL_FACTORS,
 )
 
 
@@ -83,9 +84,14 @@ def analyze_pitcher(p, league_avg_k_per_game=LEAGUE_AVG_K_PER_GAME):
     flat_avg = sum(games) / n
     weighted_avg = weighted_average(games)
 
+    situation = p.get("situation", "healthy")
+    situational_factor = SITUATIONAL_FACTORS.get(situation, 1.0)
+
     projection_no_adj, raw_stdev, pred_stdev, confidence = project(games)
     factor = pitcher_k_adjustment_factor(p["opponent_k_per_game"], league_avg_k_per_game)
-    projection_adj, _, _, _ = project(games, adjustment_factor=factor)
+    projection_adj, _, _, _ = project(
+        games, adjustment_factor=factor, situational_factor=situational_factor
+    )
     widening_pct = (pred_stdev / raw_stdev - 1) * 100
 
     print(f"=== {p['name']} ({p['team']}) vs {p['opponent']} — STRIKEOUTS ===")
@@ -94,7 +100,9 @@ def analyze_pitcher(p, league_avg_k_per_game=LEAGUE_AVG_K_PER_GAME):
     print(f"Raw stdev: {raw_stdev:.1f}  |  Predictive stdev: {pred_stdev:.1f} (+{widening_pct:.1f}% for sample-size uncertainty)")
     print(f"Sample size confidence: {confidence}")
     print(f"Opponent K/game: {p['opponent_k_per_game']}  |  League avg: {league_avg_k_per_game}  |  Factor: {factor:.3f}")
-    print(f"Projection: {projection_no_adj:.1f} (no adj) -> {projection_adj:.1f} (opponent-adjusted)")
+    if situation != "healthy":
+        print(f"Situational factor ({situation}): {situational_factor:.2f}")
+    print(f"Projection: {projection_no_adj:.1f} (no adj) -> {projection_adj:.1f} (adjusted)")
 
     final_projection = projection_adj
     matchup_history = p.get("matchup_history")
@@ -123,9 +131,15 @@ def analyze_batter(b, league_avg_era=LEAGUE_AVG_ERA):
     flat_avg = sum(games) / n
     weighted_avg = weighted_average(games)
 
+    situation = b.get("situation", "healthy")
+    situational_factor = SITUATIONAL_FACTORS.get(situation, 1.0)
+    park_factor = b.get("park_factor", 1.0)  # 1.0 = neutral park; already a ratio-to-average, no dampening needed
+
+    matchup_factor = batter_matchup_adjustment_factor(b["opponent_pitcher_era"], league_avg_era)
+    combined_factor = matchup_factor * park_factor * situational_factor
+
     projection_no_adj, raw_stdev, pred_stdev, confidence = project(games)
-    factor = batter_matchup_adjustment_factor(b["opponent_pitcher_era"], league_avg_era)
-    projection_adj, _, _, _ = project(games, adjustment_factor=factor)
+    projection_adj, _, _, _ = project(games, adjustment_factor=combined_factor)
     widening_pct = (pred_stdev / raw_stdev - 1) * 100
 
     print(f"=== {b['name']} ({b['team']}) vs {b['opponent_pitcher']} — H+R+RBI ===")
@@ -133,14 +147,31 @@ def analyze_batter(b, league_avg_era=LEAGUE_AVG_ERA):
     print(f"Flat average: {flat_avg:.1f}  |  Weighted average: {weighted_avg:.1f}")
     print(f"Raw stdev: {raw_stdev:.1f}  |  Predictive stdev: {pred_stdev:.1f} (+{widening_pct:.1f}% for sample-size uncertainty)")
     print(f"Sample size confidence: {confidence}")
-    print(f"Opponent pitcher ERA: {b['opponent_pitcher_era']}  |  League avg ERA: {league_avg_era}  |  Factor: {factor:.3f}")
-    print(f"Projection: {projection_no_adj:.1f} (no adj) -> {projection_adj:.1f} (matchup-adjusted)")
+    print(f"Opponent pitcher ERA: {b['opponent_pitcher_era']}  |  League avg ERA: {league_avg_era}  |  Matchup factor: {matchup_factor:.3f}")
+    if park_factor != 1.0:
+        print(f"Park factor: {park_factor:.2f}")
+    if situation != "healthy":
+        print(f"Situational factor ({situation}): {situational_factor:.2f}")
+    print(f"Combined factor: {combined_factor:.3f}")
+    print(f"Projection: {projection_no_adj:.1f} (no adj) -> {projection_adj:.1f} (fully adjusted)")
 
     center = round(projection_adj)
     for line in [1.5, 2.5, 3.5]:
         p_over = prob_over(line, projection_adj, pred_stdev)
         print(f"  Over {line}: {p_over:.1%} chance")
     print()
+
+
+def prompt_situation():
+    print("Any situational factor tonight?")
+    print("  1) Healthy  2) Playing through a minor injury  3) Recently returned from injury  4) A key teammate is out")
+    choice = input("Choose 1-4 [1]: ").strip() or "1"
+    return {
+        "1": "healthy",
+        "2": "playing_through_minor_injury",
+        "3": "recently_returned_from_injury",
+        "4": "key_teammate_out",
+    }.get(choice, "healthy")
 
 
 def interactive_new_entry():
@@ -167,7 +198,8 @@ def interactive_new_entry():
         opp_k = float(input(f"{opponent}'s strikeouts/game (as hitters): ").strip())
         league_avg = input(f"League avg K/game [{LEAGUE_AVG_K_PER_GAME}]: ").strip()
         league_avg = float(league_avg) if league_avg else LEAGUE_AVG_K_PER_GAME
-        pitcher = {"name": name, "team": team, "opponent": opponent, "games": games, "opponent_k_per_game": opp_k}
+        situation = prompt_situation()
+        pitcher = {"name": name, "team": team, "opponent": opponent, "games": games, "opponent_k_per_game": opp_k, "situation": situation}
         print()
         analyze_pitcher(pitcher, league_avg_k_per_game=league_avg)
     else:
@@ -190,7 +222,13 @@ def interactive_new_entry():
         opp_era = float(input(f"{opponent_pitcher}'s ERA: ").strip())
         league_avg = input(f"League avg ERA [{LEAGUE_AVG_ERA}]: ").strip()
         league_avg = float(league_avg) if league_avg else LEAGUE_AVG_ERA
-        batter = {"name": name, "team": team, "opponent_pitcher": opponent_pitcher, "games": games, "opponent_pitcher_era": opp_era}
+        park_factor_raw = input("Tonight's park factor (1.0 = neutral, e.g. 0.97 pitcher-friendly, 1.12 hitter-friendly) [1.0]: ").strip()
+        park_factor = float(park_factor_raw) if park_factor_raw else 1.0
+        situation = prompt_situation()
+        batter = {
+            "name": name, "team": team, "opponent_pitcher": opponent_pitcher, "games": games,
+            "opponent_pitcher_era": opp_era, "park_factor": park_factor, "situation": situation,
+        }
         print()
         analyze_batter(batter, league_avg_era=league_avg)
 
@@ -223,6 +261,11 @@ if __name__ == "__main__":
             "opponent_pitcher": "Michael Lorenzen (COL)",
             "games": [2, 6, 2, 4, 0, 3, 4, 9, 2, 4],  # last 10 games, combined H+R+RBI, most recent first
             "opponent_pitcher_era": 6.91,  # VERIFIED (from earlier tonight's research)
+            # VERIFIED: Petco Park RHB run factor 0.97 (fantasyteamadvice.com) —
+            # France bats right-handed (verified). Petco is a pitcher's park
+            # (marine layer suppresses offense), so this slightly DAMPENS the
+            # otherwise-favorable pitcher matchup.
+            "park_factor": 0.97,
         },
     ]
 

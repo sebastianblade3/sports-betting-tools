@@ -110,12 +110,18 @@ def dampened_ratio(value, reference, elasticity=1.0):
     return ratio ** elasticity
 
 
-def project(games, adjustment_factor=None, half_life=5):
+def project(games, adjustment_factor=None, half_life=5, situational_factor=None):
     """
     Returns (projection, raw_stdev, predictive_stdev, confidence_label) for
     any counting-stat game log, generically. `adjustment_factor` is a
-    pre-computed multiplier (e.g. opponent quality ratio) — each sport module
-    computes its own factor with its own domain logic, then passes it here.
+    pre-computed matchup multiplier (e.g. opponent quality ratio) — each
+    sport module computes its own factor with its own domain logic.
+
+    `situational_factor` is a SEPARATE multiplier for context the game log
+    itself doesn't capture yet — most commonly injury/health status or a
+    teammate being out (usage bump). Kept distinct from the matchup factor
+    so each can be reasoned about and displayed separately, rather than one
+    opaque combined number.
     """
     n = len(games)
     raw_avg = weighted_average(games, half_life=half_life)
@@ -123,6 +129,26 @@ def project(games, adjustment_factor=None, half_life=5):
     pred_stdev = predictive_stdev(raw_stdev, n)
     confidence = sample_size_confidence(n)
 
-    projection = raw_avg * adjustment_factor if adjustment_factor is not None else raw_avg
+    projection = raw_avg
+    if adjustment_factor is not None:
+        projection *= adjustment_factor
+    if situational_factor is not None:
+        projection *= situational_factor
 
     return projection, raw_stdev, pred_stdev, confidence
+
+
+# Situational factor presets — deliberately rough, judgment-call multipliers,
+# NOT derived from a backtest. Treat as a reasonable starting point to tune
+# later against real results, same honesty caveat as the elasticity values.
+# If MULTIPLE apply at once (e.g. playing hurt AND a teammate is out), the
+# simplest approach is to multiply them together — but be aware that's a
+# simplification too: real interaction effects between factors aren't
+# necessarily just the product of each in isolation. Good enough for now,
+# worth revisiting with real data later.
+SITUATIONAL_FACTORS = {
+    "healthy": 1.0,
+    "playing_through_minor_injury": 0.90,   # -10%: nagging injury, still playing
+    "recently_returned_from_injury": 0.85,  # -15%: rust/reduced role, compounds with the small-sample LOW-confidence flag this player will likely already get
+    "key_teammate_out": 1.15,               # +15%: usage bump from a teammate's absence
+}

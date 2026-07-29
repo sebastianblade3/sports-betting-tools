@@ -10,6 +10,7 @@ from stats_engine import (
     prob_over,
     shrink_toward_general,
     project,
+    SITUATIONAL_FACTORS,
 )
 
 
@@ -41,9 +42,14 @@ def analyze_player(p, league_avg_def_rating=LEAGUE_AVG_DEF_RATING):
     flat_avg = sum(games) / n
     weighted_avg = weighted_average(games)
 
+    situation = p.get("situation", "healthy")
+    situational_factor = SITUATIONAL_FACTORS.get(situation, 1.0)
+
     projection_no_adj, raw_stdev, pred_stdev, confidence = project(games)
     factor = opponent_adjustment_factor(p["opponent_def_rating"], league_avg_def_rating)
-    projection_adj, _, _, _ = project(games, adjustment_factor=factor)
+    projection_adj, _, _, _ = project(
+        games, adjustment_factor=factor, situational_factor=situational_factor
+    )
     widening_pct = (pred_stdev / raw_stdev - 1) * 100
 
     print(f"=== {p['name']} ({p['team']}) vs {p['opponent']} ===")
@@ -52,7 +58,9 @@ def analyze_player(p, league_avg_def_rating=LEAGUE_AVG_DEF_RATING):
     print(f"Raw stdev: {raw_stdev:.1f}  |  Predictive stdev: {pred_stdev:.1f} (+{widening_pct:.1f}% for sample-size uncertainty)")
     print(f"Sample size confidence: {confidence}")
     print(f"Opponent points allowed/game: {p['opponent_def_rating']}  |  League avg: {league_avg_def_rating}  |  Factor: {factor:.3f}")
-    print(f"Projection: {projection_no_adj:.1f} (no adj) -> {projection_adj:.1f} (opponent-adjusted)")
+    if situation != "healthy":
+        print(f"Situational factor ({situation}): {situational_factor:.2f}")
+    print(f"Projection: {projection_no_adj:.1f} (no adj) -> {projection_adj:.1f} (opponent + situational adjusted)")
 
     final_projection = projection_adj
     matchup_history = p.get("matchup_history")
@@ -112,12 +120,24 @@ def interactive_new_player():
             except ValueError:
                 print("  Enter a whole number, or 'done'.")
 
+    print("\nAny situational factor tonight?")
+    print("  1) Healthy  2) Playing through a minor injury  3) Recently returned from injury  4) A key teammate is out")
+    situation_choice = input("Choose 1-4 [1]: ").strip() or "1"
+    situation_map = {
+        "1": "healthy",
+        "2": "playing_through_minor_injury",
+        "3": "recently_returned_from_injury",
+        "4": "key_teammate_out",
+    }
+    situation = situation_map.get(situation_choice, "healthy")
+
     player = {
         "name": name,
         "team": team,
         "games": games,
         "opponent": opponent,
         "opponent_def_rating": opp_def_rating,
+        "situation": situation,
     }
     if matchup_history:
         player["matchup_history"] = matchup_history
