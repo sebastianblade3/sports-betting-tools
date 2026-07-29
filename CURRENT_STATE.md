@@ -217,6 +217,33 @@ backtest against actual results would let these be properly calibrated
 instead of chosen by judgment. The "real" fix (splitting H+R+RBI into
 separate hits/runs/RBI sub-models) is still a bigger future refinement.
 
+## Done (2026-07-28): de-vig calculator + injury/usage factors + MLB park factors
+
+- **Built `devig_tool.py` (Phase 3 from the original roadmap)**: strips vig
+  from real two-sided American odds (proportional/multiplicative method) to
+  get the market's TRUE implied probability, then compares against your own
+  model's probability to compute edge. Tested on a real market (Tigers -140
+  / Orioles +120, verified 2026-07-28): 3.79pp vig, true probs 56.2%/43.8%.
+  Added to Desktop launcher (now 5 options).
+- **Added situational factors** (`SITUATIONAL_FACTORS` in stats_engine.py) —
+  injury/usage context as a separate multiplier from the matchup factor:
+  healthy (1.0), playing through minor injury (0.90), recently returned from
+  injury (0.85), key teammate out (1.15). Explicitly labeled as rough
+  judgment-call starting points, not backtested. Applied to both NBA and MLB
+  models (pitchers and batters), with an interactive prompt for each.
+- **Added MLB park factors** to the batter model — real, verified example:
+  Petco Park RHB run factor 0.97 (fantasyteamadvice.com), confirmed Ty
+  France bats right-handed. Park factor is already expressed as a
+  ratio-to-average, so no elasticity dampening needed (unlike the ERA
+  matchup factor) — it multiplies in directly alongside the matchup and
+  situational factors.
+- Considered true height/weight-based physical mismatch modeling — decided
+  against it for a player's own projection (no clear standalone mechanism,
+  already reflected in their performance history); MLB park factors turned
+  out to be the tractable, real version of "physical mismatch" for batters.
+  NBA defender-height matchup data would need paywalled tracking services
+  (Synergy Sports-type) — not pursued.
+
 ## ▶ RESUME HERE
 
 Both nba_props_model.py and mlb_props_model.py run on real verified data
