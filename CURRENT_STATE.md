@@ -197,6 +197,26 @@ session and it'll sync automatically.
   verification, fetch unreliability for "today," the batter-adjustment
   caveat) baked into its prompt.
 
+## Done (2026-07-28): dampened MLB adjustment factors with elasticity
+
+Added `dampened_ratio()` to stats_engine.py — a ratio raised to a fractional
+"elasticity" exponent (1.0 = full linear effect, 0.0 = no effect), for when
+a matchup factor is real but not fully proportional. Applied to both MLB
+adjustments:
+- Pitcher K factor: elasticity=0.7 (fairly direct relationship — strikeouts
+  are a head-to-head pitcher/hitter outcome)
+- Batter H+R+RBI factor: elasticity=0.5 (more dampened — combined stat mixes
+  a directly pitcher-dependent piece (hits) with teammate-dependent pieces
+  (runs, RBI))
+
+Verified effect: Ty France's factor dropped from 1.685 -> 1.298, over-1.5
+probability from 94.8% -> 86.9%. Melton's factor dropped more modestly
+(1.093 -> 1.064) since it needed less correction. Noted honestly in code:
+0.5/0.7 are reasonable starting points, not precisely derived — a real
+backtest against actual results would let these be properly calibrated
+instead of chosen by judgment. The "real" fix (splitting H+R+RBI into
+separate hits/runs/RBI sub-models) is still a bigger future refinement.
+
 ## ▶ RESUME HERE
 
 Both nba_props_model.py and mlb_props_model.py run on real verified data
