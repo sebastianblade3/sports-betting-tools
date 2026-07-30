@@ -1,263 +1,45 @@
 # Current State — Sports Betting / EV
 
-Rewritten in place at every checkpoint (see [[Home]] rule 1).
+Rewritten in place at every checkpoint (see [[Home]] rule 1). Full build
+history and reasoning archived in [[Build-Log-Archive]] — this file is just
+the current status.
 
 ## Status
 
-Exploratory phase — talking through real matches/props to build intuition
-before writing any code. EV tool itself not started yet.
+Full toolset built and working, all in `Projects/Sports-Betting/`:
+- `ev_tool.py` — EV/parlay calculator (PrizePicks payout math)
+- `nba_props_model.py` — NBA/WNBA points prop model
+- `mlb_props_model.py` — MLB props model (pitcher K's, batter H+R+RBI)
+- `devig_tool.py` — strips vig from real odds, compares vs model probability
+- `stats_engine.py` — shared math: recency weighting, predictive stdev,
+  matchup shrinkage, elasticity-dampened ratios, situational/park factors
 
-**Platform: user bets on PrizePicks**, not a standard sportsbook. This matters
-a lot — PrizePicks pays fixed multipliers on multi-pick entries rather than
-per-bet decimal odds with vig, so the breakeven bar is different:
-- Power Play (all picks must hit): breakeven per-leg probability is ~55–58%+
-  (e.g. 2-pick/3x ≈ 57.7%, 6-pick/37.5x ≈ 54.7%), NOT the ~52.4% breakeven of
-  a standard -110 sportsbook line.
-- Flex Play: partial hits still pay out on a curve, more forgiving than Power
-  but still meaningfully above a coinflip per leg.
-- Practical implication: "which side is favored" (>50%) is NOT sufficient for
-  a good PrizePicks pick — need real confidence above ~55–58% per leg. Any
-  future EV tool must model PrizePicks' specific payout curve, not generic
-  sportsbook vig.
+All launchable via "Sports Betting Tools" double-click launcher (Desktop +
+canonical copy in this folder). Repo: `github.com/sebastianblade3/sports-betting-tools`
+(public). Platform: **user bets on PrizePicks** — needs ~55-58%+ per-leg
+confidence, not just >50% (see [[prizepicks_platform]] memory).
 
-## Done
+Two daily cloud routines (WNBA + MLB, both 9am PT) meant to auto-refresh
+player data and push updates.
 
-- Discussed Tommy Paul vs Kamil Majchrzak (Citi Open, 2026-07-28) — win + total
-  games props, corrected match-total vs player-total-games-won distinction.
-- Discussed Jakub Mensik vs Trevor Svajda (Citi Open, 2026-07-28) — same props,
-  compared blowout risk vs the Paul match.
+## Known open items / honest caveats
 
-## In flight
-
-- Talking through more of tomorrow's (2026-07-28) Citi Open Washington card.
-
-## Done
-
-- 6-pick Power Play from 7/28 checked and confirmed LOST (2 coinflip legs
-  missed — see Match-Notes.md).
-- **EV tool v1 built**: `ev_tool.py` in this folder. Command-line calculator
-  — enter legs + your probability estimates, it computes combined hit
-  probability (Power) or full payout distribution (Flex), compares to the
-  real PrizePicks breakeven, and can auto-log the entry to Match-Notes.md.
-  Verified against both the 6-pick and the 3-pick baseball-only example —
-  matches the by-hand math exactly.
-
-## Done (2026-07-28, NBA/WNBA prediction model — new direction)
-
-User bets most on NBA (now saved to memory). Since NBA is off-season, we're
-building the model against WNBA (in-season, same prop types) as a live test
-bed that transfers directly to NBA in October. Staying free/manual-data for
-now, no paid odds API yet, "slow and steady, learn as we go" pace.
-
-**Built `nba_props_model.py`** in this folder — a real points-prop projection
-model, not a guess:
-- Recency-weighted average (recent games count more, half-life=5 games)
-- Standard deviation (how volatile the player's output is)
-- Normal-distribution probability calculator (exact P(over line) given a
-  projection + stdev)
-- Opponent adjustment factor (opponent's defensive rating / league average)
-
-Tested on A'ja Wilson (verified real last-10-games log: 38,26,20,21,32,30,32,
-16,19,33) vs tonight's Portland Fire matchup. Portland's 111.8 defensive
-rating (worst in WNBA) is VERIFIED. League average (used 102.0) is an
-ESTIMATE — repeated fetch attempts to confirm the real 2026 number were
-blocked. Result: adjusted projection 30.0 +/- 7.3, e.g. 68.5% over 26.5.
-
-**Data reliability lesson learned (important):** hit repeated cases of
-fetch tools fabricating plausible-looking results for games that hadn't been
-played yet (Collier vs Toronto claimed final 100-93 hours before tipoff) —
-same pattern as the earlier Melton/Lee box score issues. Rule going forward:
-never trust a "today's result" from a single fetch — cross-check with a
-second independent search before treating it as real.
-
-## Done (2026-07-28, league-average verification)
-
-Verified via covers.com team-defense table (all 15 WNBA teams, 2026): league
-average points-allowed/game = **86.88**, Portland Fire = **90.19** (13th of
-15, NOT worst). This replaces the earlier ESTIMATE (102.0) and the earlier
-mismatched pace-adjusted Portland number (111.8 DRTG).
-
-**Real lesson learned:** the original version mixed a pace-adjusted stat
-(Portland's 111.8 defensive rating, "worst in WNBA") with an estimated
-league average on that same pace-adjusted basis — apples to oranges. Once
-corrected to a single consistent metric (raw points allowed/game, fully
-verified for all teams), the "favorable matchup" effect shrank a lot:
-adjustment factor 1.096 -> 1.038, projection 30.0 -> 28.4. Mixing partially-
-verified numbers, even when each individual number is real, can still
-produce a misleading combined result — verify the METRIC matches, not just
-that each number is real.
-
-## Done (2026-07-28, more players added)
-
-Refactored to a data-driven `players` list, added two more real worked
-examples alongside Wilson (all verified game logs + verified opponent
-points-allowed/game):
-- Caitlin Clark (Fever) vs Seattle Storm — notably huge stdev (10.4), very
-  volatile scorer (9 to 45 in the same 10-game window); Seattle's defense is
-  almost exactly league average so she gets ~zero adjustment (good sanity
-  check the model doesn't invent an edge where none exists).
-- Sabrina Ionescu (Liberty) vs LA Sparks — Sparks are the actual worst
-  points-allowed/game team in the league, biggest adjustment factor (1.075).
-
-Dropped Napheesa Collier as a candidate: she missed ~27 games this season
-(dual ankle surgery, ~300 day injury layoff) and only has ONE real 2026 game
-— too small a sample and coming off major injury, not representative.
-
-## Done (2026-07-28, small-sample uncertainty refinement)
-
-Added `predictive_stdev()` (widens raw stdev by sqrt(1+1/n) to account for
-uncertainty in the estimate of the mean itself, not just game-to-game
-variance) and `sample_size_confidence()` (plain-English HIGH/MODERATE/LOW
-label based on n). Verified behaving correctly: at n=10 the widening is a
-modest ~5% (probabilities compress slightly toward 50% symmetrically around
-the projection); at n=3 it'd be ~15%; at n=1 it's undefined — mathematically
-confirms why Collier's 1-game sample can't be modeled, not just an eyeball
-call. This is the standard statistical "prediction interval vs confidence
-interval" distinction.
-
-## Done (2026-07-28, matchup-history shrinkage + interactive mode)
-
-- **Matchup-history shrinkage**: true league-wide position-vs-defense (DVP)
-  tables (RotoWire, Dunkest) are JS-rendered and couldn't be fetched despite
-  several tries — pivoted to something arguably better: real head-to-head
-  history. Found Wilson has scored exactly 32 pts in BOTH her games vs
-  Portland this season (verified). Built `shrink_toward_general()` — blends
-  small-sample matchup history toward the general model using proper
-  statistical shrinkage (weight = n/(n+k)), so a hot 2-game history pulls the
-  projection up (28.4 -> 29.5) without overriding the broader model. Noted
-  disclosed limitation: one game overlaps between the general 10-game sample
-  and the 2-game matchup sample (not perfectly clean, but transparent about it).
-- **Interactive mode added**: script now opens with a menu — run the 3-player
-  demo, or enter a brand-new player's data interactively (name, team,
-  opponent, game log, opponent def rating, optional matchup history). Tested
-  end-to-end, correctly flags LOW confidence on a small test sample.
-- The Desktop "Sports Betting Tools" launcher needs no changes — it just
-  calls this script, so the new menu appears automatically.
-
-## Done (2026-07-28): scheduled daily cloud automation — WORKING
-
-Set up GitHub CLI (`gh`, verified checksum, installed), authenticated as
-`sebastianblade3`, created repo `sebastianblade3/sports-betting-tools`
-(originally private, see below), pushed the Sports-Betting project there.
-
-Created a daily cloud routine (RemoteTrigger, id `trig_01LeubQPFubYkh1qU6diLpKW`,
-https://claude.ai/code/routines/trig_01LeubQPFubYkh1qU6diLpKW) running every
-day at 9:00 AM Pacific (`0 16 * * *` UTC). Prompt has it: find tonight's WNBA
-schedule, refresh real verified game logs + opponent points-allowed/game for
-tracked (or newly notable) players, update `nba_props_model.py`'s player
-list, run it, append results to `Match-Notes.md`, commit and push — with all
-the lessons learned tonight baked in (don't trust "today" fetch results
-without cross-verification, don't mix pace-adjusted and non-pace-adjusted
-metrics, skip injury-return small samples).
-
-**Root cause of initial failures**: repeated `403 "You don't have access to
-a repository this routine uses"` even after connecting GitHub at
-claude.ai/customize/connectors and confirming account-level GitHub App
-access. Turned out to be a **private-repo scope issue** — switching the repo
-to PUBLIC fixed it immediately. Repo is public now (contains only code +
-betting projections, no personal/financial info, considered an acceptable
-tradeoff for working automation).
-
-**Important**: the cloud agent pushes to GitHub only — the local vault copy
-here does NOT auto-update. Someone needs to `git pull` in this folder to
-bring changes down to Obsidian. Ask Claude to "pull the latest updates" next
-session and it'll sync automatically.
-
-## Done (2026-07-28): MLB props model built + extended to daily automation
-
-- **Extracted `stats_engine.py`**: pulled the shared, sport-agnostic math
-  (recency weighting, predictive stdev, shrinkage, probability) out of
-  nba_props_model.py into its own module so both sports use identical,
-  tested code rather than duplicated logic. Verified the refactor produces
-  byte-identical results to before.
-- **Built `mlb_props_model.py`** with two prop types (MLB props aren't a
-  single stat like basketball points):
-  - Pitcher strikeouts, adjusted by opposing team's K rate
-  - Batter combined H+R+RBI, adjusted by opposing starter's ERA
-  - Real verified demo data: Troy Melton (last 10 starts: [5,9,9,7,6,5,5,5,1,3]
-    via ESPN gamelog — this CORRECTED the "9 K in each of last two starts"
-    claim used earlier tonight, which turned out stale/inaccurate once
-    checked against the real table) vs Orioles (9.18 K/game, verified); Ty
-    France (last 10 games combined H+R+RBI: [2,6,2,4,0,3,4,9,2,4]) vs
-    Lorenzen (6.91 ERA, verified).
-  - League avg ERA (~4.10) moderately verified via aggregated search; league
-    avg K/game (8.4) is an explicit UNVERIFIED ESTIMATE — repeated searches
-    for a clean official number failed.
-  - **Flagged honest limitation**: the batter ERA-ratio adjustment is cruder
-    than the NBA defense adjustment — applying the full ERA ratio to a
-    combined 3-stat category overstated the effect (94.8% vs an earlier
-    qualitative ~65% estimate for the same matchup). Documented in the code
-    as a known issue to refine, not swept under the rug.
-- **Desktop launcher updated** — now offers EV calculator, NBA/WNBA model,
-  and MLB model (3 options + quit). Tested end to end.
-- **Pushed to GitHub** and **created a second daily cloud routine**
-  ("Daily MLB Props Model Update", id `trig_01RaDzAHsJaXdnGUCZAbZAXi`,
-  https://claude.ai/code/routines/trig_01RaDzAHsJaXdnGUCZAbZAXi) — same
-  9am PT schedule as the WNBA one, with all tonight's lessons (date
-  verification, fetch unreliability for "today," the batter-adjustment
-  caveat) baked into its prompt.
-
-## Done (2026-07-28): dampened MLB adjustment factors with elasticity
-
-Added `dampened_ratio()` to stats_engine.py — a ratio raised to a fractional
-"elasticity" exponent (1.0 = full linear effect, 0.0 = no effect), for when
-a matchup factor is real but not fully proportional. Applied to both MLB
-adjustments:
-- Pitcher K factor: elasticity=0.7 (fairly direct relationship — strikeouts
-  are a head-to-head pitcher/hitter outcome)
-- Batter H+R+RBI factor: elasticity=0.5 (more dampened — combined stat mixes
-  a directly pitcher-dependent piece (hits) with teammate-dependent pieces
-  (runs, RBI))
-
-Verified effect: Ty France's factor dropped from 1.685 -> 1.298, over-1.5
-probability from 94.8% -> 86.9%. Melton's factor dropped more modestly
-(1.093 -> 1.064) since it needed less correction. Noted honestly in code:
-0.5/0.7 are reasonable starting points, not precisely derived — a real
-backtest against actual results would let these be properly calibrated
-instead of chosen by judgment. The "real" fix (splitting H+R+RBI into
-separate hits/runs/RBI sub-models) is still a bigger future refinement.
-
-## Done (2026-07-28): de-vig calculator + injury/usage factors + MLB park factors
-
-- **Built `devig_tool.py` (Phase 3 from the original roadmap)**: strips vig
-  from real two-sided American odds (proportional/multiplicative method) to
-  get the market's TRUE implied probability, then compares against your own
-  model's probability to compute edge. Tested on a real market (Tigers -140
-  / Orioles +120, verified 2026-07-28): 3.79pp vig, true probs 56.2%/43.8%.
-  Added to Desktop launcher (now 5 options).
-- **Added situational factors** (`SITUATIONAL_FACTORS` in stats_engine.py) —
-  injury/usage context as a separate multiplier from the matchup factor:
-  healthy (1.0), playing through minor injury (0.90), recently returned from
-  injury (0.85), key teammate out (1.15). Explicitly labeled as rough
-  judgment-call starting points, not backtested. Applied to both NBA and MLB
-  models (pitchers and batters), with an interactive prompt for each.
-- **Added MLB park factors** to the batter model — real, verified example:
-  Petco Park RHB run factor 0.97 (fantasyteamadvice.com), confirmed Ty
-  France bats right-handed. Park factor is already expressed as a
-  ratio-to-average, so no elasticity dampening needed (unlike the ERA
-  matchup factor) — it multiplies in directly alongside the matchup and
-  situational factors.
-- Considered true height/weight-based physical mismatch modeling — decided
-  against it for a player's own projection (no clear standalone mechanism,
-  already reflected in their performance history); MLB park factors turned
-  out to be the tractable, real version of "physical mismatch" for batters.
-  NBA defender-height matchup data would need paywalled tracking services
-  (Synergy Sports-type) — not pursued.
+- League avg K/game (8.4) for MLB is an unverified estimate — worth
+  re-checking if a clean source turns up.
+- Batter H+R+RBI adjustment elasticity (0.5) and pitcher K elasticity (0.7)
+  are judgment calls, not backtested against real results.
+- No pace-adjusted (per-100-possessions) NBA defense metric — using raw
+  points-allowed/game instead; league DVP (position-vs-defense) tables are
+  JS-rendered and unreachable, using matchup-history shrinkage instead.
+- Situational factors (injury/usage) are rough presets, not calibrated.
 
 ## ▶ RESUME HERE
 
-Both nba_props_model.py and mlb_props_model.py run on real verified data
-end to end, share stats_engine.py, and have working daily cloud automation
-(2 separate routines, both 9am PT). Next session: `git pull` in this folder
-first to check whether BOTH automated runs (WNBA + MLB) worked overnight —
-verify new commits came in, review what each did, and specifically check
-whether the MLB routine found a better league-avg K/game number or refined
-the batter-adjustment caveat. Next steps beyond that:
-(1) add more players/opponents as worked examples, (2) consider proper
-pace-adjusted defensive rating as a future refinement (would need
-possessions/pace data per team, not yet sourced), (3) eventually build the
-de-vig calculator (Phase 3) and a local frontend (Phase 4). ev_tool.py
-(parlay/EV calculator) is separate and already working — this model feeds
-probability estimates into that tool rather than replacing it. Both tools
-are launchable via the "Sports Betting Tools" double-click launcher (copy
-on Desktop, canonical copy in this folder).
+**2026-07-30**: automated daily routines fired (confirmed via `last_fired_at`
+timestamps) but produced ZERO commits on GitHub over 2 days — confirmed via
+both local `git pull` and the GitHub API directly, ruling out a local git
+issue. Likely cause: write-back (commit+push) credentials inside the cloud
+sandbox were never verified, only read (clone) access. Triggered a manual
+test run (session `cse_01TLkSTnXaWgeiG3toRcjomw`) to diagnose live — **check
+the repo for a new commit to see if it resolved itself, or investigate
+push credentials in the cloud environment if it didn't.**
