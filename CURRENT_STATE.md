@@ -57,6 +57,14 @@ trig_01RaDzAHsJaXdnGUCZAbZAXi (MLB) if worth debugging properly later.
   calibrated — same story, needs calibration data over time.
 - Position-specific defense (DVP) still not used — league tables are
   JS-rendered and unreachable; matchup-history shrinkage is the workaround.
+- ~~Batter model only accounts for starter, ignores bullpen~~ **RESOLVED
+  2026-07-31**: added `effective_opponent_era()` — blends starter ERA with
+  bullpen ERA (65%/35% weighted, a round-number assumption about innings
+  split, not precisely derived). Real find on Rockies specifically: bullpen
+  ERA is genuinely volatile (3.77 in April vs 5.79 last-7-days as of 7/30) —
+  used the more current number but flagged the volatility honestly rather
+  than pretending it's a stable input. Full-season bullpen ERA was
+  paywalled everywhere checked.
 
 ## ▶ RESUME HERE
 
