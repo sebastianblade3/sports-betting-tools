@@ -19,8 +19,13 @@ canonical copy in this folder). Repo: `github.com/sebastianblade3/sports-betting
 (public). Platform: **user bets on PrizePicks** — needs ~55-58%+ per-leg
 confidence, not just >50% (see [[prizepicks_platform]] memory).
 
-Two daily cloud routines (WNBA + MLB, both 9am PT) meant to auto-refresh
-player data and push updates.
+Two daily cloud routines (WNBA + MLB) were built but **disabled 2026-07-31**
+after confirming they fired daily for 2+ days without ever producing a
+commit — read (clone) access worked, write-back (commit+push) silently
+never did. Back to manual/on-demand use of the tools for now. See
+[[Build-Log-Archive]] for the full diagnostic. Routines still exist
+(disabled, not deleted) at trig_01LeubQPFubYkh1qU6diLpKW (WNBA) and
+trig_01RaDzAHsJaXdnGUCZAbZAXi (MLB) if worth debugging properly later.
 
 ## Known open items / honest caveats
 
@@ -35,11 +40,7 @@ player data and push updates.
 
 ## ▶ RESUME HERE
 
-**2026-07-30**: automated daily routines fired (confirmed via `last_fired_at`
-timestamps) but produced ZERO commits on GitHub over 2 days — confirmed via
-both local `git pull` and the GitHub API directly, ruling out a local git
-issue. Likely cause: write-back (commit+push) credentials inside the cloud
-sandbox were never verified, only read (clone) access. Triggered a manual
-test run (session `cse_01TLkSTnXaWgeiG3toRcjomw`) to diagnose live — **check
-the repo for a new commit to see if it resolved itself, or investigate
-push credentials in the cloud environment if it didn't.**
+Automation disabled (see above) — using the tools manually/on-demand for
+now. Back to active development on the models themselves. Open threads to
+pick from: verify the MLB league-avg K/game estimate, refine the elasticity
+values with real backtesting, add more players, or something new.
