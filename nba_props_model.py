@@ -10,6 +10,7 @@ from stats_engine import (
     prob_over,
     shrink_toward_general,
     project,
+    blend_recent_and_season,
     SITUATIONAL_FACTORS,
 )
 
@@ -55,17 +56,23 @@ def analyze_player(p, league_avg_def_rating=LEAGUE_AVG_DEF_RATING):
 
     situation = p.get("situation", "healthy")
     situational_factor = SITUATIONAL_FACTORS.get(situation, 1.0)
+    season_avg = p.get("season_avg")  # optional: full-season PPG, blended with recent form
 
-    projection_no_adj, raw_stdev, pred_stdev, confidence = project(games)
+    projection_no_adj, raw_stdev, pred_stdev, confidence = project(games, season_avg=season_avg)
     factor = opponent_adjustment_factor(p["opponent_def_rating"], league_avg_def_rating)
     projection_adj, _, _, _ = project(
-        games, adjustment_factor=factor, situational_factor=situational_factor
+        games, adjustment_factor=factor, situational_factor=situational_factor, season_avg=season_avg
     )
     widening_pct = (pred_stdev / raw_stdev - 1) * 100
 
     print(f"=== {p['name']} ({p['team']}) vs {p['opponent']} ===")
     print(f"Last {n} games: {games}")
-    print(f"Flat average: {flat_avg:.1f}  |  Weighted average: {weighted_avg:.1f}")
+    print(f"Flat average: {flat_avg:.1f}  |  Weighted average (last-{n}): {weighted_avg:.1f}", end="")
+    if season_avg is not None:
+        blended = blend_recent_and_season(weighted_avg, season_avg)
+        print(f"  |  Season avg: {season_avg:.1f}  |  Blended (70/30): {blended:.1f}")
+    else:
+        print()
     print(f"Raw stdev: {raw_stdev:.1f}  |  Predictive stdev: {pred_stdev:.1f} (+{widening_pct:.1f}% for sample-size uncertainty)")
     print(f"Sample size confidence: {confidence}")
     print(f"Opponent points allowed/game: {p['opponent_def_rating']}  |  League avg: {league_avg_def_rating}  |  Factor: {factor:.3f}")
@@ -118,6 +125,9 @@ def interactive_new_player():
     league_avg = input(f"League average points allowed/game [{LEAGUE_AVG_DEF_RATING}]: ").strip()
     league_avg = float(league_avg) if league_avg else LEAGUE_AVG_DEF_RATING
 
+    season_avg_raw = input("Their full-season points/game average, if known (blank to skip): ").strip()
+    season_avg = float(season_avg_raw) if season_avg_raw else None
+
     matchup_history = []
     has_history = input("Any head-to-head history vs this opponent this season? [y/n]: ").strip().lower()
     if has_history == "y":
@@ -152,6 +162,8 @@ def interactive_new_player():
     }
     if matchup_history:
         player["matchup_history"] = matchup_history
+    if season_avg is not None:
+        player["season_avg"] = season_avg
 
     print()
     analyze_player(player, league_avg_def_rating=league_avg)
@@ -179,6 +191,11 @@ if __name__ == "__main__":
             "games": [38, 26, 20, 21, 32, 30, 32, 16, 19, 33],
             "opponent": "Portland Fire",
             "opponent_def_rating": 114.21,  # 2nd-worst pace-adjusted DRTG in the league
+            # VERIFIED: season PPG 31.6 (StatMuse) — notably ABOVE her last-10
+            # weighted average (27.4), meaning this specific 10-game window
+            # caught a cooler stretch than her season as a whole. The blend
+            # pulls the projection back up toward her real full-season level.
+            "season_avg": 31.6,
             # VERIFIED: Wilson vs Portland specifically this season — 32 pts
             # both June 11 and July 9. Note: July 9 is ALSO one of the 10
             # games in the general log above — a one-game overlap between
@@ -192,6 +209,7 @@ if __name__ == "__main__":
             "games": [27, 17, 45, 13, 12, 9, 19, 24, 26, 26],
             "opponent": "Seattle Storm",
             "opponent_def_rating": 108.08,  # right at league average now
+            "season_avg": 21.5,  # VERIFIED (StatMuse) — close to her last-10 (22.3), small effect
         },
         {
             "name": "Sabrina Ionescu",
@@ -199,6 +217,7 @@ if __name__ == "__main__":
             "games": [29, 21, 12, 28, 25, 14, 17, 9, 14, 16],
             "opponent": "Los Angeles Sparks",
             "opponent_def_rating": 113.23,  # 3rd-worst pace-adjusted DRTG in the league
+            "season_avg": 21.6,  # VERIFIED (StatMuse) — a bit above her last-10 (20.1), modest boost
         },
     ]
 

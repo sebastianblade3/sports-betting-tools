@@ -110,7 +110,24 @@ def dampened_ratio(value, reference, elasticity=1.0):
     return ratio ** elasticity
 
 
-def project(games, adjustment_factor=None, half_life=5, situational_factor=None):
+def blend_recent_and_season(recent_avg, season_avg, weight_recent=0.7):
+    """
+    Blends a recency-weighted recent-form average (e.g. last 10 games) with
+    a full-season average, so a small window that happened to catch an
+    unusually hot or cold stretch doesn't get taken at pure face value.
+
+    weight_recent=0.7 (judgment call, not derived): recent form should
+    matter MORE than season-long average for a "tonight" projection — a
+    player's current role/health/matchups often really are different from
+    their season-to-date — but shouldn't be trusted at 100% face value
+    either, since a 10-game window is still a fairly small, noisy sample.
+    Higher weight_recent = trust the recent window more; lower = lean more
+    on the full season as a stabilizer.
+    """
+    return weight_recent * recent_avg + (1 - weight_recent) * season_avg
+
+
+def project(games, adjustment_factor=None, half_life=5, situational_factor=None, season_avg=None, weight_recent=0.7):
     """
     Returns (projection, raw_stdev, predictive_stdev, confidence_label) for
     any counting-stat game log, generically. `adjustment_factor` is a
@@ -122,9 +139,18 @@ def project(games, adjustment_factor=None, half_life=5, situational_factor=None)
     teammate being out (usage bump). Kept distinct from the matchup factor
     so each can be reasoned about and displayed separately, rather than one
     opaque combined number.
+
+    `season_avg`, if provided, blends the recency-weighted average with the
+    full-season average (see blend_recent_and_season) BEFORE any adjustment
+    factors are applied — so a last-10 window that happened to catch an
+    unusually hot/cold stretch gets pulled back toward the season baseline.
     """
     n = len(games)
     raw_avg = weighted_average(games, half_life=half_life)
+
+    if season_avg is not None:
+        raw_avg = blend_recent_and_season(raw_avg, season_avg, weight_recent=weight_recent)
+
     raw_stdev = sample_stdev(games)
     pred_stdev = predictive_stdev(raw_stdev, n)
     confidence = sample_size_confidence(n)
