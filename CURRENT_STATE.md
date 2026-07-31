@@ -17,7 +17,10 @@ Full toolset built and working, all in `Projects/Sports-Betting/`:
   matchup shrinkage, elasticity-dampened ratios, situational/park factors
 
 All launchable via "Sports Betting Tools" double-click launcher (Desktop +
-canonical copy in this folder). Repo: `github.com/sebastianblade3/sports-betting-tools`
+canonical copy in this folder) — **now a real button-based GUI window**
+(`launcher_gui.py`, tkinter), added 2026-07-31, instead of a typed-number
+text menu. Clicking a button opens that tool in its own Terminal window.
+Repo: `github.com/sebastianblade3/sports-betting-tools`
 (public). Platform: **user bets on PrizePicks** — needs ~55-58%+ per-leg
 confidence, not just >50% (see [[prizepicks_platform]] memory).
 
