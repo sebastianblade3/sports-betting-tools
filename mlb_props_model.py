@@ -41,29 +41,40 @@ def pitcher_k_adjustment_factor(opponent_k_per_game, league_avg_k_per_game, elas
 
 def batter_matchup_adjustment_factor(opponent_pitcher_era, league_avg_era, elasticity=0.5):
     """
-    Dampened ratio of the opposing STARTING PITCHER's ERA to league average.
-    >1.0 means the pitcher is WORSE than average (higher ERA) -> good
-    matchup for the batter's H+R+RBI projection.
+    Dampened ratio of the opposing STARTING PITCHER's ERA to league average,
+    generic version (used per sub-stat below with a different elasticity
+    each, and kept here standalone in case you want a single combined-stat
+    read without the sub-stat breakdown).
 
     Note: this only accounts for the starter, not the bullpen the batter
-    might also face later in the game — a real simplification worth
-    upgrading later (would need the opposing bullpen's ERA too, weighted by
-    how many innings the batter is likely to see each).
-
-    elasticity=0.5 (square root, more dampened than the pitcher side's 0.7):
-    H+R+RBI mixes a directly pitcher-dependent stat (hits — closely tied to
-    ERA/WHIP) with stats that are only partially pitcher-dependent (runs and
-    RBI depend heavily on the batter's OWN teammates — who's on base, who's
-    hitting behind them — not just who's pitching). Applying the full ratio
-    (elasticity=1.0) tested at 94.8% on Ty France vs a 6.91 ERA starter,
-    notably higher than an earlier same-night qualitative ~65% estimate —
-    confirming the full ratio overstates it. 0.5 is a reasonable, tunable
-    starting point, not a precisely derived number — a real backtest against
-    actual results would let this be calibrated properly instead of guessed.
-    The real fix would be splitting into separate hits/runs/RBI sub-models
-    with their own appropriate factors; this is a scoped middle ground.
+    might also face later in the game — still a real simplification even
+    with the sub-stat split below.
     """
     return dampened_ratio(opponent_pitcher_era, league_avg_era, elasticity=elasticity)
+
+
+# Per-sub-stat elasticities — THE fix for the crude combined-H+R+RBI
+# approximation. Each stat has a genuinely different relationship to the
+# opposing pitcher's quality:
+#
+# - HITS (elasticity 0.6): the most directly pitcher-dependent of the three
+#   — closely tied to the pitcher's own hits-allowed rate/WHIP. Still not
+#   fully proportional (batter's own contact skill, park, luck all matter
+#   too), so still dampened, just less than the other two.
+# - RUNS (elasticity 0.3): depends heavily on the batter's OWN speed/
+#   baserunning and on TEAMMATES driving them in — a bad opposing pitcher
+#   creates more baserunners generally, but whether THIS batter scores
+#   depends much more on lineup context than on who's pitching.
+# - RBI (elasticity 0.3): same logic as runs, mirrored — depends on
+#   teammates being on base ahead of this batter, not mainly on the pitcher.
+#
+# These three numbers are still judgment calls (not backtested), same
+# honesty caveat as before — but they're now at least DIFFERENTIATED by how
+# directly each stat actually relates to pitcher quality, instead of forcing
+# one blended number onto three different things.
+HITS_ELASTICITY = 0.6
+RUNS_ELASTICITY = 0.3
+RBI_ELASTICITY = 0.3
 
 
 # League averages — verification quality noted honestly per number:
@@ -129,34 +140,75 @@ def analyze_pitcher(p, league_avg_k_per_game=LEAGUE_AVG_K_PER_GAME):
 
 
 def analyze_batter(b, league_avg_era=LEAGUE_AVG_ERA):
-    """Prints the H+R+RBI-prop breakdown for one batter dict."""
-    games = b["games"]  # each entry already combined H+R+RBI for that game
-    n = len(games)
-    flat_avg = sum(games) / n
-    weighted_avg = weighted_average(games)
+    """
+    Prints the H+R+RBI-prop breakdown for one batter dict.
 
+    If separate 'hits'/'runs'/'rbi' game logs are provided, uses the sub-stat
+    approach (each projected + adjusted separately with its own elasticity,
+    then summed) — this is the real fix for the crude combined-stat
+    approximation. Falls back to the old single-elasticity combined approach
+    if only a combined 'games' list is given (e.g. from the interactive mode,
+    where asking for 3 separate logs would be a lot of typing).
+    """
     situation = b.get("situation", "healthy")
     situational_factor = SITUATIONAL_FACTORS.get(situation, 1.0)
     park_factor = b.get("park_factor", 1.0)  # 1.0 = neutral park; already a ratio-to-average, no dampening needed
 
-    matchup_factor = batter_matchup_adjustment_factor(b["opponent_pitcher_era"], league_avg_era)
-    combined_factor = matchup_factor * park_factor * situational_factor
+    has_substats = "hits" in b and "runs" in b and "rbi" in b
 
-    projection_no_adj, raw_stdev, pred_stdev, confidence = project(games)
-    projection_adj, _, _, _ = project(games, adjustment_factor=combined_factor)
+    if has_substats:
+        hits, runs, rbi = b["hits"], b["runs"], b["rbi"]
+        combined_games = [h + r + rb for h, r, rb in zip(hits, runs, rbi)]
+        n = len(combined_games)
+
+        hits_factor = batter_matchup_adjustment_factor(b["opponent_pitcher_era"], league_avg_era, elasticity=HITS_ELASTICITY)
+        runs_factor = batter_matchup_adjustment_factor(b["opponent_pitcher_era"], league_avg_era, elasticity=RUNS_ELASTICITY)
+        rbi_factor = batter_matchup_adjustment_factor(b["opponent_pitcher_era"], league_avg_era, elasticity=RBI_ELASTICITY)
+
+        hits_proj, _, _, _ = project(hits, adjustment_factor=hits_factor)
+        runs_proj, _, _, _ = project(runs, adjustment_factor=runs_factor)
+        rbi_proj, _, _, _ = project(rbi, adjustment_factor=rbi_factor)
+
+        matchup_adjusted_sum = hits_proj + runs_proj + rbi_proj
+
+        # stdev/confidence come from the real combined game log directly —
+        # that part was never the problem, only the MEAN estimate was crude.
+        _, raw_stdev, pred_stdev, confidence = project(combined_games)
+        projection_no_adj = sum(project(s)[0] for s in (hits, runs, rbi))
+
+        print(f"=== {b['name']} ({b['team']}) vs {b['opponent_pitcher']} — H+R+RBI (sub-stat model) ===")
+        print(f"Last {n} games — hits: {hits} | runs: {runs} | rbi: {rbi}")
+        print(f"Sub-stat projections: hits {hits_proj:.2f} (factor {hits_factor:.3f}) + "
+              f"runs {runs_proj:.2f} (factor {runs_factor:.3f}) + rbi {rbi_proj:.2f} (factor {rbi_factor:.3f})")
+        combined_factor = matchup_adjusted_sum / projection_no_adj if projection_no_adj else 1.0
+        projection_adj = matchup_adjusted_sum
+    else:
+        games = b["games"]  # combined H+R+RBI only, no split available
+        n = len(games)
+
+        matchup_factor = batter_matchup_adjustment_factor(b["opponent_pitcher_era"], league_avg_era)
+        projection_no_adj, raw_stdev, pred_stdev, confidence = project(games)
+        projection_adj, _, _, _ = project(games, adjustment_factor=matchup_factor)
+        combined_factor = matchup_factor
+
+        print(f"=== {b['name']} ({b['team']}) vs {b['opponent_pitcher']} — H+R+RBI (combined-stat fallback) ===")
+        print(f"Last {n} games (combined H+R+RBI): {games}")
+        print(f"Opponent pitcher ERA: {b['opponent_pitcher_era']}  |  League avg ERA: {league_avg_era}  |  Matchup factor: {matchup_factor:.3f}")
+
+    # Apply park + situational on top of the matchup-adjusted sum either way
+    projection_adj = projection_adj * park_factor * situational_factor
+    combined_factor = combined_factor * park_factor * situational_factor
     widening_pct = (pred_stdev / raw_stdev - 1) * 100
 
-    print(f"=== {b['name']} ({b['team']}) vs {b['opponent_pitcher']} — H+R+RBI ===")
-    print(f"Last {n} games (combined H+R+RBI): {games}")
-    print(f"Flat average: {flat_avg:.1f}  |  Weighted average: {weighted_avg:.1f}")
+    flat_avg = sum([h + r + rb for h, r, rb in zip(b["hits"], b["runs"], b["rbi"])]) / n if has_substats else sum(b["games"]) / n
+    print(f"Flat average: {flat_avg:.1f}")
     print(f"Raw stdev: {raw_stdev:.1f}  |  Predictive stdev: {pred_stdev:.1f} (+{widening_pct:.1f}% for sample-size uncertainty)")
     print(f"Sample size confidence: {confidence}")
-    print(f"Opponent pitcher ERA: {b['opponent_pitcher_era']}  |  League avg ERA: {league_avg_era}  |  Matchup factor: {matchup_factor:.3f}")
     if park_factor != 1.0:
         print(f"Park factor: {park_factor:.2f}")
     if situation != "healthy":
         print(f"Situational factor ({situation}): {situational_factor:.2f}")
-    print(f"Combined factor: {combined_factor:.3f}")
+    print(f"Overall effective factor: {combined_factor:.3f}")
     print(f"Projection: {projection_no_adj:.1f} (no adj) -> {projection_adj:.1f} (fully adjusted)")
 
     center = round(projection_adj)
@@ -263,7 +315,13 @@ if __name__ == "__main__":
             "name": "Ty France",
             "team": "San Diego Padres",
             "opponent_pitcher": "Michael Lorenzen (COL)",
-            "games": [2, 6, 2, 4, 0, 3, 4, 9, 2, 4],  # last 10 games, combined H+R+RBI, most recent first
+            # VERIFIED (ESPN gamelog), last 10 games, most recent first,
+            # SEPARATED into sub-stats (this is the upgrade from the earlier
+            # combined-only version) — hits+runs+rbi sums to the same
+            # [2,6,2,4,0,3,4,9,2,4] combined log used before.
+            "hits": [2, 2, 2, 1, 0, 2, 2, 2, 2, 1],
+            "runs": [0, 1, 0, 1, 0, 0, 1, 2, 0, 2],
+            "rbi":  [0, 3, 0, 2, 0, 1, 1, 5, 0, 1],
             "opponent_pitcher_era": 6.91,  # VERIFIED (from earlier tonight's research)
             # VERIFIED: Petco Park RHB run factor 0.97 (fantasyteamadvice.com) —
             # France bats right-handed (verified). Petco is a pitcher's park
