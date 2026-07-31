@@ -54,11 +54,32 @@ class EVToolWindow:
         self.build_leg_rows()
 
     def build_leg_rows(self):
+        try:
+            self._build_leg_rows()
+        except Exception as e:
+            # Final safety net: no error should ever disappear silently.
+            messagebox.showerror("Something went wrong", f"{type(e).__name__}: {e}")
+
+    def _build_leg_rows(self):
+        try:
+            n = self.num_legs.get()
+        except tk.TclError:
+            messagebox.showerror(
+                "Invalid number of legs",
+                "The 'Number of legs' box doesn't have a valid whole number in it "
+                "right now (e.g. it might be empty or mid-edit). Click into it, "
+                "make sure it shows a number like 3, then try 'Set Up Legs' again.",
+            )
+            return
+
+        if not (2 <= n <= 6):
+            messagebox.showerror("Out of range", "Number of legs must be between 2 and 6.")
+            return
+
         for widget in self.legs_frame.winfo_children():
             widget.destroy()
         self.leg_rows = []
 
-        n = self.num_legs.get()
         tk.Label(self.legs_frame, text="Leg label", font=("Helvetica", 10, "bold")).grid(row=0, column=0, padx=10)
         tk.Label(self.legs_frame, text="Probability (0-1 or %)", font=("Helvetica", 10, "bold")).grid(row=0, column=1, padx=10)
 
@@ -80,6 +101,17 @@ class EVToolWindow:
         return val
 
     def calculate(self):
+        try:
+            self._calculate()
+        except Exception as e:
+            # Final safety net: no error should ever disappear silently.
+            messagebox.showerror("Something went wrong", f"{type(e).__name__}: {e}")
+
+    def _calculate(self):
+        if not self.leg_rows:
+            messagebox.showerror("No legs set up", "Click 'Set Up Legs' first.")
+            return
+
         try:
             legs = [le.get().strip() for le, pe in self.leg_rows]
             probs = [self.parse_prob(pe.get()) for le, pe in self.leg_rows]
