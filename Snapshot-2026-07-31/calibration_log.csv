@@ -1,0 +1,4 @@
+date,description,predicted_prob,actual_outcome,notes
+2026-07-28,Tommy Paul own games won over 13.5,0.50,0,coinflip read; lost 5-7 6-7(4) own games=11
+2026-07-28,En-Shuo Liang own games won over 9.5,0.525,0,coinflip read; lost 2-6 4-6 own games=6
+2026-07-28,Joc Pederson H+R+RBI over 1.5,0.575,1,hit 2 combined (1H 1R 0RBI)
