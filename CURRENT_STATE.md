@@ -41,8 +41,15 @@ trig_01RaDzAHsJaXdnGUCZAbZAXi (MLB) if worth debugging properly later.
   independently verified) for all 15 WNBA teams. League avg 108.51. This
   also confirmed the original "Portland worst in WNBA" claim we'd flagged as
   mismatched was actually roughly right (114.21 by our own calc, 2nd-worst).
-- Batter H+R+RBI adjustment elasticity (0.5) and pitcher K elasticity (0.7)
-  are STILL judgment calls, not backtested — this is what `calibration_tool.py`
+- ~~Batter H+R+RBI single crude elasticity~~ **PARTIALLY RESOLVED 2026-07-31**:
+  split into separate hits/runs/rbi sub-models with differentiated elasticity
+  (hits 0.6, runs/rbi 0.3 each — hits are more directly pitcher-dependent),
+  summed for the final projection. Still judgment-call VALUES though (0.6,
+  0.3, 0.7 for pitcher K's) — genuinely differentiated now, not backtested.
+  `analyze_batter()` falls back to the old combined approach if only a
+  combined game log is given (e.g. from interactive mode).
+- Elasticity values (now 3 for batters + 1 for pitchers) and situational
+  factors are still not backtested — this is what `calibration_tool.py`
   (new) is for, but needs real logged predictions + outcomes to accumulate
   over time before it can actually inform these values. Only 3 entries
   logged so far (all from 7/28) — nowhere near enough.
