@@ -41,16 +41,34 @@ def pitcher_k_adjustment_factor(opponent_k_per_game, league_avg_k_per_game, elas
 
 def batter_matchup_adjustment_factor(opponent_pitcher_era, league_avg_era, elasticity=0.5):
     """
-    Dampened ratio of the opposing STARTING PITCHER's ERA to league average,
-    generic version (used per sub-stat below with a different elasticity
-    each, and kept here standalone in case you want a single combined-stat
-    read without the sub-stat breakdown).
-
-    Note: this only accounts for the starter, not the bullpen the batter
-    might also face later in the game — still a real simplification even
-    with the sub-stat split below.
+    Dampened ratio of an opposing pitcher's (or blended pitcher+bullpen, see
+    effective_opponent_era below) ERA to league average, generic version
+    (used per sub-stat below with a different elasticity each).
     """
     return dampened_ratio(opponent_pitcher_era, league_avg_era, elasticity=elasticity)
+
+
+# Rough assumption for how much of a batter's game is against the starter
+# vs the bullpen — a typical batter gets ~4 PA/game; if the starter goes
+# ~5-6 innings (a common modern outing length), the batter likely sees the
+# starter for their first 2-3 PA and the bullpen for the last 1-2. 65/35 is
+# a reasonable round-number split, NOT derived from precise inning-by-inning
+# data — a real refinement would use the specific pitcher's typical innings
+# per start and the batter's actual lineup spot, but this is a meaningful
+# upgrade over ignoring the bullpen entirely.
+STARTER_WEIGHT = 0.65
+BULLPEN_WEIGHT = 0.35
+
+
+def effective_opponent_era(starter_era, bullpen_era=None):
+    """
+    Blends starter ERA with bullpen ERA using STARTER_WEIGHT/BULLPEN_WEIGHT.
+    Falls back to starter-only if no bullpen ERA is available (previous
+    behavior, still fine when bullpen data isn't sourced for a matchup).
+    """
+    if bullpen_era is None:
+        return starter_era
+    return STARTER_WEIGHT * starter_era + BULLPEN_WEIGHT * bullpen_era
 
 
 # Per-sub-stat elasticities — THE fix for the crude combined-H+R+RBI
@@ -154,6 +172,12 @@ def analyze_batter(b, league_avg_era=LEAGUE_AVG_ERA):
     situational_factor = SITUATIONAL_FACTORS.get(situation, 1.0)
     park_factor = b.get("park_factor", 1.0)  # 1.0 = neutral park; already a ratio-to-average, no dampening needed
 
+    bullpen_era = b.get("opponent_bullpen_era")
+    eff_era = effective_opponent_era(b["opponent_pitcher_era"], bullpen_era)
+    if bullpen_era is not None:
+        print(f"Effective opponent ERA: {STARTER_WEIGHT:.0%} starter ({b['opponent_pitcher_era']}) + "
+              f"{BULLPEN_WEIGHT:.0%} bullpen ({bullpen_era}) = {eff_era:.2f}")
+
     has_substats = "hits" in b and "runs" in b and "rbi" in b
 
     if has_substats:
@@ -161,9 +185,9 @@ def analyze_batter(b, league_avg_era=LEAGUE_AVG_ERA):
         combined_games = [h + r + rb for h, r, rb in zip(hits, runs, rbi)]
         n = len(combined_games)
 
-        hits_factor = batter_matchup_adjustment_factor(b["opponent_pitcher_era"], league_avg_era, elasticity=HITS_ELASTICITY)
-        runs_factor = batter_matchup_adjustment_factor(b["opponent_pitcher_era"], league_avg_era, elasticity=RUNS_ELASTICITY)
-        rbi_factor = batter_matchup_adjustment_factor(b["opponent_pitcher_era"], league_avg_era, elasticity=RBI_ELASTICITY)
+        hits_factor = batter_matchup_adjustment_factor(eff_era, league_avg_era, elasticity=HITS_ELASTICITY)
+        runs_factor = batter_matchup_adjustment_factor(eff_era, league_avg_era, elasticity=RUNS_ELASTICITY)
+        rbi_factor = batter_matchup_adjustment_factor(eff_era, league_avg_era, elasticity=RBI_ELASTICITY)
 
         hits_proj, _, _, _ = project(hits, adjustment_factor=hits_factor)
         runs_proj, _, _, _ = project(runs, adjustment_factor=runs_factor)
@@ -186,14 +210,14 @@ def analyze_batter(b, league_avg_era=LEAGUE_AVG_ERA):
         games = b["games"]  # combined H+R+RBI only, no split available
         n = len(games)
 
-        matchup_factor = batter_matchup_adjustment_factor(b["opponent_pitcher_era"], league_avg_era)
+        matchup_factor = batter_matchup_adjustment_factor(eff_era, league_avg_era)
         projection_no_adj, raw_stdev, pred_stdev, confidence = project(games)
         projection_adj, _, _, _ = project(games, adjustment_factor=matchup_factor)
         combined_factor = matchup_factor
 
         print(f"=== {b['name']} ({b['team']}) vs {b['opponent_pitcher']} — H+R+RBI (combined-stat fallback) ===")
         print(f"Last {n} games (combined H+R+RBI): {games}")
-        print(f"Opponent pitcher ERA: {b['opponent_pitcher_era']}  |  League avg ERA: {league_avg_era}  |  Matchup factor: {matchup_factor:.3f}")
+        print(f"Opponent ERA used: {eff_era:.2f}  |  League avg ERA: {league_avg_era}  |  Matchup factor: {matchup_factor:.3f}")
 
     # Apply park + situational on top of the matchup-adjusted sum either way
     projection_adj = projection_adj * park_factor * situational_factor
@@ -323,6 +347,16 @@ if __name__ == "__main__":
             "runs": [0, 1, 0, 1, 0, 0, 1, 2, 0, 2],
             "rbi":  [0, 3, 0, 2, 0, 1, 1, 5, 0, 1],
             "opponent_pitcher_era": 6.91,  # VERIFIED (from earlier tonight's research)
+            # VERIFIED but genuinely volatile: Rockies bullpen ERA was 3.77
+            # in April 2026 (good) and 5.79 over the last 7 days as of
+            # 7/30/2026 (mediocre) — this specific bullpen is documented as
+            # swinging wildly month to month (great in April, bad in May,
+            # good again in July per Purple Row). Using the more CURRENT
+            # last-7-days number since recency matters more than an old
+            # snapshot, but flagging honestly that this is a small, volatile
+            # sample, not a stable season-long number (full-season bullpen
+            # ERA was paywalled everywhere I checked).
+            "opponent_bullpen_era": 5.79,
             # VERIFIED: Petco Park RHB run factor 0.97 (fantasyteamadvice.com) —
             # France bats right-handed (verified). Petco is a pitcher's park
             # (marine layer suppresses offense), so this slightly DAMPENS the
