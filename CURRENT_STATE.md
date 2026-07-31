@@ -65,6 +65,15 @@ trig_01RaDzAHsJaXdnGUCZAbZAXi (MLB) if worth debugging properly later.
   used the more current number but flagged the volatility honestly rather
   than pretending it's a stable input. Full-season bullpen ERA was
   paywalled everywhere checked.
+- ~~NBA: no season-long context, last-10 window could be skewed~~ **RESOLVED
+  2026-07-31**: added `blend_recent_and_season()` (70/30 weighted toward
+  recent form) to stats_engine.py. Real find: Wilson's last-10 average
+  (27.4) was notably BELOW her verified season average (31.6) — this window
+  happened to catch a cooler stretch — blend pulls her projection up to 28.7.
+  Clark/Ionescu saw smaller effects since their recent/season averages were
+  already close. This was the last of the original 3 refinement options
+  offered early on (small-sample uncertainty, position-specific defense,
+  this one) — all 3 now done in some form.
 
 ## ▶ RESUME HERE
 
