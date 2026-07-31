@@ -18,6 +18,7 @@ from stats_engine import (
     shrink_toward_general,
     project,
     dampened_ratio,
+    blend_recent_and_season,
     SITUATIONAL_FACTORS,
 )
 
@@ -119,17 +120,23 @@ def analyze_pitcher(p, league_avg_k_per_game=LEAGUE_AVG_K_PER_GAME):
 
     situation = p.get("situation", "healthy")
     situational_factor = SITUATIONAL_FACTORS.get(situation, 1.0)
+    season_avg = p.get("season_avg")  # optional: full-season K/start average
 
-    projection_no_adj, raw_stdev, pred_stdev, confidence = project(games)
+    projection_no_adj, raw_stdev, pred_stdev, confidence = project(games, season_avg=season_avg)
     factor = pitcher_k_adjustment_factor(p["opponent_k_per_game"], league_avg_k_per_game)
     projection_adj, _, _, _ = project(
-        games, adjustment_factor=factor, situational_factor=situational_factor
+        games, adjustment_factor=factor, situational_factor=situational_factor, season_avg=season_avg
     )
     widening_pct = (pred_stdev / raw_stdev - 1) * 100
 
     print(f"=== {p['name']} ({p['team']}) vs {p['opponent']} — STRIKEOUTS ===")
     print(f"Last {n} starts: {games}")
-    print(f"Flat average: {flat_avg:.1f}  |  Weighted average: {weighted_avg:.1f}")
+    print(f"Flat average: {flat_avg:.1f}  |  Weighted average: {weighted_avg:.1f}", end="")
+    if season_avg is not None:
+        blended = blend_recent_and_season(weighted_avg, season_avg)
+        print(f"  |  Season avg: {season_avg:.1f}  |  Blended (70/30): {blended:.1f}")
+    else:
+        print()
     print(f"Raw stdev: {raw_stdev:.1f}  |  Predictive stdev: {pred_stdev:.1f} (+{widening_pct:.1f}% for sample-size uncertainty)")
     print(f"Sample size confidence: {confidence}")
     print(f"Opponent K/game: {p['opponent_k_per_game']}  |  League avg: {league_avg_k_per_game}  |  Factor: {factor:.3f}")
@@ -167,6 +174,12 @@ def analyze_batter(b, league_avg_era=LEAGUE_AVG_ERA):
     approximation. Falls back to the old single-elasticity combined approach
     if only a combined 'games' list is given (e.g. from the interactive mode,
     where asking for 3 separate logs would be a lot of typing).
+
+    Optional fields: 'season_avg_hits'/'season_avg_runs'/'season_avg_rbi' (or
+    just 'season_avg' in fallback mode) blend recent form with full-season
+    averages, same concept as the NBA model. 'matchup_history' (combined
+    H+R+RBI per game vs this specific opponent) applies shrinkage on top of
+    everything else, same as the pitcher side above.
     """
     situation = b.get("situation", "healthy")
     situational_factor = SITUATIONAL_FACTORS.get(situation, 1.0)
@@ -189,19 +202,31 @@ def analyze_batter(b, league_avg_era=LEAGUE_AVG_ERA):
         runs_factor = batter_matchup_adjustment_factor(eff_era, league_avg_era, elasticity=RUNS_ELASTICITY)
         rbi_factor = batter_matchup_adjustment_factor(eff_era, league_avg_era, elasticity=RBI_ELASTICITY)
 
-        hits_proj, _, _, _ = project(hits, adjustment_factor=hits_factor)
-        runs_proj, _, _, _ = project(runs, adjustment_factor=runs_factor)
-        rbi_proj, _, _, _ = project(rbi, adjustment_factor=rbi_factor)
+        season_hits = b.get("season_avg_hits")
+        season_runs = b.get("season_avg_runs")
+        season_rbi = b.get("season_avg_rbi")
+
+        hits_proj, _, _, _ = project(hits, adjustment_factor=hits_factor, season_avg=season_hits)
+        runs_proj, _, _, _ = project(runs, adjustment_factor=runs_factor, season_avg=season_runs)
+        rbi_proj, _, _, _ = project(rbi, adjustment_factor=rbi_factor, season_avg=season_rbi)
 
         matchup_adjusted_sum = hits_proj + runs_proj + rbi_proj
 
         # stdev/confidence come from the real combined game log directly —
         # that part was never the problem, only the MEAN estimate was crude.
         _, raw_stdev, pred_stdev, confidence = project(combined_games)
-        projection_no_adj = sum(project(s)[0] for s in (hits, runs, rbi))
+        projection_no_adj = sum(
+            project(s, season_avg=sa)[0]
+            for s, sa in ((hits, season_hits), (runs, season_runs), (rbi, season_rbi))
+        )
 
         print(f"=== {b['name']} ({b['team']}) vs {b['opponent_pitcher']} — H+R+RBI (sub-stat model) ===")
         print(f"Last {n} games — hits: {hits} | runs: {runs} | rbi: {rbi}")
+        if season_hits is not None or season_runs is not None or season_rbi is not None:
+            sh = f"{season_hits:.2f}" if season_hits is not None else "n/a"
+            sr = f"{season_runs:.2f}" if season_runs is not None else "n/a"
+            srbi = f"{season_rbi:.2f}" if season_rbi is not None else "n/a"
+            print(f"Season averages — hits: {sh}  runs: {sr}  rbi: {srbi}")
         print(f"Sub-stat projections: hits {hits_proj:.2f} (factor {hits_factor:.3f}) + "
               f"runs {runs_proj:.2f} (factor {runs_factor:.3f}) + rbi {rbi_proj:.2f} (factor {rbi_factor:.3f})")
         combined_factor = matchup_adjusted_sum / projection_no_adj if projection_no_adj else 1.0
@@ -209,14 +234,19 @@ def analyze_batter(b, league_avg_era=LEAGUE_AVG_ERA):
     else:
         games = b["games"]  # combined H+R+RBI only, no split available
         n = len(games)
+        season_avg = b.get("season_avg")
 
         matchup_factor = batter_matchup_adjustment_factor(eff_era, league_avg_era)
-        projection_no_adj, raw_stdev, pred_stdev, confidence = project(games)
-        projection_adj, _, _, _ = project(games, adjustment_factor=matchup_factor)
+        projection_no_adj, raw_stdev, pred_stdev, confidence = project(games, season_avg=season_avg)
+        projection_adj, _, _, _ = project(games, adjustment_factor=matchup_factor, season_avg=season_avg)
         combined_factor = matchup_factor
 
         print(f"=== {b['name']} ({b['team']}) vs {b['opponent_pitcher']} — H+R+RBI (combined-stat fallback) ===")
-        print(f"Last {n} games (combined H+R+RBI): {games}")
+        print(f"Last {n} games (combined H+R+RBI): {games}", end="")
+        if season_avg is not None:
+            print(f"  |  Season avg: {season_avg:.1f}")
+        else:
+            print()
         print(f"Opponent ERA used: {eff_era:.2f}  |  League avg ERA: {league_avg_era}  |  Matchup factor: {matchup_factor:.3f}")
 
     # Apply park + situational on top of the matchup-adjusted sum either way
@@ -235,9 +265,20 @@ def analyze_batter(b, league_avg_era=LEAGUE_AVG_ERA):
     print(f"Overall effective factor: {combined_factor:.3f}")
     print(f"Projection: {projection_no_adj:.1f} (no adj) -> {projection_adj:.1f} (fully adjusted)")
 
-    center = round(projection_adj)
+    final_projection = projection_adj
+    matchup_history = b.get("matchup_history")
+    if matchup_history:
+        m_n = len(matchup_history)
+        m_avg = sum(matchup_history) / m_n
+        blended, weight_specific = shrink_toward_general(m_avg, m_n, projection_adj)
+        print(f"Matchup history vs {b['opponent_pitcher']}: {matchup_history} (avg {m_avg:.1f}, n={m_n})")
+        print(f"Shrinkage weight on matchup history: {weight_specific:.1%}")
+        print(f"Projection: {projection_adj:.1f} -> {blended:.1f} (matchup-blended)")
+        final_projection = blended
+
+    center = round(final_projection)
     for line in [1.5, 2.5, 3.5]:
-        p_over = prob_over(line, projection_adj, pred_stdev)
+        p_over = prob_over(line, final_projection, pred_stdev)
         print(f"  Over {line}: {p_over:.1%} chance")
     print()
 
@@ -254,6 +295,35 @@ def prompt_situation():
     }.get(choice, "healthy")
 
 
+def prompt_game_log(label, minimum=3):
+    print(f"Enter {label}, most recent first. (Type 'done' when finished — need at least {minimum}.)")
+    values = []
+    while True:
+        raw = input(f"  Game {len(values) + 1} (or 'done'): ").strip()
+        if raw.lower() == "done":
+            if len(values) < minimum:
+                print(f"  Need at least {minimum}.")
+                continue
+            break
+        try:
+            values.append(int(raw))
+        except ValueError:
+            print("  Enter a whole number, or 'done'.")
+    return values
+
+
+def prompt_optional_float(prompt_text):
+    raw = input(prompt_text).strip()
+    return float(raw) if raw else None
+
+
+def prompt_matchup_history(opponent_label):
+    has_history = input(f"Any head-to-head history vs {opponent_label} this season? [y/n]: ").strip().lower()
+    if has_history != "y":
+        return None
+    return prompt_game_log("their totals in each game vs this opponent", minimum=1)
+
+
 def interactive_new_entry():
     print("\n1) Pitcher (strikeouts)  2) Batter (H+R+RBI)")
     kind = input("Which kind? [1/2]: ").strip()
@@ -262,53 +332,70 @@ def interactive_new_entry():
         name = input("Pitcher name: ").strip()
         team = input("Team: ").strip()
         opponent = input("Tonight's opponent: ").strip()
-        print("Enter their last N starts' strikeouts, most recent first.")
-        games = []
-        while True:
-            raw = input(f"  Start {len(games) + 1} strikeouts (or 'done'): ").strip()
-            if raw.lower() == "done":
-                if len(games) < 3:
-                    print("  Need at least 3 starts.")
-                    continue
-                break
-            try:
-                games.append(int(raw))
-            except ValueError:
-                print("  Enter a whole number, or 'done'.")
+        games = prompt_game_log("their last N starts' strikeouts")
         opp_k = float(input(f"{opponent}'s strikeouts/game (as hitters): ").strip())
         league_avg = input(f"League avg K/game [{LEAGUE_AVG_K_PER_GAME}]: ").strip()
         league_avg = float(league_avg) if league_avg else LEAGUE_AVG_K_PER_GAME
+        season_avg = prompt_optional_float("Their full-season K/start average, if known (blank to skip): ")
+        matchup_history = prompt_matchup_history(opponent)
         situation = prompt_situation()
-        pitcher = {"name": name, "team": team, "opponent": opponent, "games": games, "opponent_k_per_game": opp_k, "situation": situation}
+        pitcher = {
+            "name": name, "team": team, "opponent": opponent, "games": games,
+            "opponent_k_per_game": opp_k, "situation": situation,
+        }
+        if season_avg is not None:
+            pitcher["season_avg"] = season_avg
+        if matchup_history:
+            pitcher["matchup_history"] = matchup_history
         print()
         analyze_pitcher(pitcher, league_avg_k_per_game=league_avg)
     else:
         name = input("Batter name: ").strip()
         team = input("Team: ").strip()
         opponent_pitcher = input("Tonight's opposing starter: ").strip()
-        print("Enter their combined H+R+RBI for each of their last N games, most recent first.")
-        games = []
-        while True:
-            raw = input(f"  Game {len(games) + 1} H+R+RBI total (or 'done'): ").strip()
-            if raw.lower() == "done":
-                if len(games) < 3:
-                    print("  Need at least 3 games.")
-                    continue
-                break
-            try:
-                games.append(int(raw))
-            except ValueError:
-                print("  Enter a whole number, or 'done'.")
+
+        use_substats = input("Enter separate hits/runs/rbi logs (more precise) or just combined H+R+RBI? [separate/combined]: ").strip().lower()
+        batter = {"name": name, "team": team, "opponent_pitcher": opponent_pitcher}
+
+        if use_substats.startswith("s"):
+            hits = prompt_game_log("their last N games' HITS")
+            runs = prompt_game_log("their last N games' RUNS")
+            rbi = prompt_game_log("their last N games' RBI")
+            batter["hits"], batter["runs"], batter["rbi"] = hits, runs, rbi
+
+            season_hits = prompt_optional_float("Their full-season hits/game average, if known (blank to skip): ")
+            season_runs = prompt_optional_float("Their full-season runs/game average, if known (blank to skip): ")
+            season_rbi = prompt_optional_float("Their full-season RBI/game average, if known (blank to skip): ")
+            if season_hits is not None:
+                batter["season_avg_hits"] = season_hits
+            if season_runs is not None:
+                batter["season_avg_runs"] = season_runs
+            if season_rbi is not None:
+                batter["season_avg_rbi"] = season_rbi
+        else:
+            games = prompt_game_log("their combined H+R+RBI for each of their last N games")
+            batter["games"] = games
+            season_avg = prompt_optional_float("Their full-season combined H+R+RBI/game average, if known (blank to skip): ")
+            if season_avg is not None:
+                batter["season_avg"] = season_avg
+
         opp_era = float(input(f"{opponent_pitcher}'s ERA: ").strip())
+        bullpen_era = prompt_optional_float("Opponent's bullpen ERA, if known (blank to skip): ")
         league_avg = input(f"League avg ERA [{LEAGUE_AVG_ERA}]: ").strip()
         league_avg = float(league_avg) if league_avg else LEAGUE_AVG_ERA
         park_factor_raw = input("Tonight's park factor (1.0 = neutral, e.g. 0.97 pitcher-friendly, 1.12 hitter-friendly) [1.0]: ").strip()
         park_factor = float(park_factor_raw) if park_factor_raw else 1.0
+        matchup_history = prompt_matchup_history(opponent_pitcher)
         situation = prompt_situation()
-        batter = {
-            "name": name, "team": team, "opponent_pitcher": opponent_pitcher, "games": games,
-            "opponent_pitcher_era": opp_era, "park_factor": park_factor, "situation": situation,
-        }
+
+        batter["opponent_pitcher_era"] = opp_era
+        if bullpen_era is not None:
+            batter["opponent_bullpen_era"] = bullpen_era
+        batter["park_factor"] = park_factor
+        batter["situation"] = situation
+        if matchup_history:
+            batter["matchup_history"] = matchup_history
+
         print()
         analyze_batter(batter, league_avg_era=league_avg)
 
@@ -331,6 +418,12 @@ if __name__ == "__main__":
             "opponent": "Baltimore Orioles",
             "games": [5, 9, 9, 7, 6, 5, 5, 5, 1, 3],  # last 10 starts, most recent first
             "opponent_k_per_game": 9.18,  # VERIFIED: 983 SO / 107 games (fantasyteamadvice.com)
+            # No season_avg here deliberately: Melton has made exactly 10
+            # starts this season (5-1, 60.0 IP in 10 starts per earlier
+            # research) — his "season" IS this last-10 log, so a season
+            # blend would be a meaningless no-op, not a missing feature.
+            # season_avg IS supported here (see analyze_pitcher) for any
+            # pitcher with more starts than the window shown.
         },
     ]
 
@@ -346,6 +439,16 @@ if __name__ == "__main__":
             "hits": [2, 2, 2, 1, 0, 2, 2, 2, 2, 1],
             "runs": [0, 1, 0, 1, 0, 0, 1, 2, 0, 2],
             "rbi":  [0, 3, 0, 2, 0, 1, 1, 5, 0, 1],
+            # VERIFIED (StatMuse): full 2026 season = 82 G, 73 H, 33 R, 46 RBI
+            # (internally consistent: 73/256 AB = .285, matches stated avg).
+            # Per-game: hits 0.89, runs 0.40, rbi 0.56 — all notably LOWER
+            # than his last-10 pace (which has been a hot stretch), so this
+            # blend pulls the projection back down toward his real season
+            # level, same direction-of-effect lesson as Wilson but opposite
+            # sign (hers pulled UP, his pulls DOWN).
+            "season_avg_hits": 73 / 82,
+            "season_avg_runs": 33 / 82,
+            "season_avg_rbi": 46 / 82,
             "opponent_pitcher_era": 6.91,  # VERIFIED (from earlier tonight's research)
             # VERIFIED but genuinely volatile: Rockies bullpen ERA was 3.77
             # in April 2026 (good) and 5.79 over the last 7 days as of
