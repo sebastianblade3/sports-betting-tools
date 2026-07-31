@@ -75,12 +75,31 @@ trig_01RaDzAHsJaXdnGUCZAbZAXi (MLB) if worth debugging properly later.
   offered early on (small-sample uncertainty, position-specific defense,
   this one) — all 3 now done in some form.
 
+- ~~MLB missing season-avg blend + batter matchup-shrinkage; interactive
+  mode behind the demo~~ **RESOLVED 2026-07-31**: brought MLB to full parity
+  with NBA — season-avg blending added for both pitchers and batter
+  sub-stats (real data: France's season hits/game 0.89, runs/game 0.40,
+  rbi/game 0.56, all from a verified 82-game/73-hit/33-run/46-RBI season
+  line — pulled his hot last-10 projection DOWN, opposite direction from
+  Wilson's up-pull, same underlying lesson either way); matchup-history
+  shrinkage added for batters (tested with synthetic data, works correctly);
+  interactive mode rewritten to prompt for ALL of these (season avg, bullpen
+  ERA, sub-stats vs combined choice, matchup history) for both pitchers and
+  batters — no longer behind the hardcoded demo data.
+- **Real calibration data point found**: while researching France's season
+  numbers, discovered the actual 7/28 Padres-Rockies box score already
+  existed — France went 1-for-5, 1 R, 0 RBI = 2 combined, clearing the 1.5
+  line (a HIT). Logged to calibration_log.csv with the model's estimate at
+  the time (83.8%) — calibration_log.csv now has 4 real entries.
+
 ## ▶ RESUME HERE
 
-Automation disabled, using tools manually/on-demand. Two of four caveats
-resolved with real verified data (MLB K/game, NBA pace-adjusted defense).
-Remaining two (elasticity values, situational factors) genuinely need
+Automation disabled, using tools manually/on-demand. NBA and MLB models are
+now at full feature parity (season blend, matchup shrinkage, situational
+factors, opponent adjustment all compose for both sports), and the
+interactive mode supports every field the demo data does. Remaining honest
+gaps (elasticity values, situational factor presets) genuinely need
 calibration data over time, not a one-session fix — **log every real
-prediction + outcome into calibration_log.csv going forward** so
-calibration_tool.py's report actually becomes meaningful. Other threads:
-add more players, or something new.
+prediction + outcome into calibration_log.csv going forward** (only 4
+entries so far) so calibration_tool.py's report actually becomes
+meaningful. Other threads: add more players, or something new.
