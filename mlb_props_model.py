@@ -70,11 +70,15 @@ def batter_matchup_adjustment_factor(opponent_pitcher_era, league_avg_era, elast
 # - LEAGUE_AVG_ERA: moderately verified (~4.10) via aggregated search
 #   results, not a single clean official table. Good enough to use, but
 #   less solid than the WNBA points-allowed table was.
-# - LEAGUE_AVG_K_PER_GAME: UNVERIFIED ESTIMATE based on general recent MLB
-#   trends (~8.3-8.5 team strikeouts/game) — repeated searches for an exact
-#   current-season number came up empty. Replace if you find a real one.
+# - LEAGUE_AVG_K_PER_GAME: VERIFIED (2026-07-31) from real per-team data via
+#   StatMuse, 25 of 30 teams (Reds 9.48 down to Dodgers 7.88) — computed by
+#   hand: sum=214.34, n=25, avg=8.574. Note: the source page itself claimed
+#   "8.47" as the average of these same numbers, which is WRONG (verify
+#   arithmetic yourself, don't trust a page's stated summary stat even when
+#   the underlying data is real). Missing 5 teams, so still an approximation,
+#   but real data covering 5/6 of the league beats the old flat estimate.
 LEAGUE_AVG_ERA = 4.10
-LEAGUE_AVG_K_PER_GAME = 8.4  # ESTIMATE — unverified, see note above
+LEAGUE_AVG_K_PER_GAME = 8.57
 
 
 def analyze_pitcher(p, league_avg_k_per_game=LEAGUE_AVG_K_PER_GAME):

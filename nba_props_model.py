@@ -16,23 +16,34 @@ from stats_engine import (
 
 def opponent_adjustment_factor(opponent_def_rating, league_avg_def_rating):
     """
-    Ratio of opponent's points-allowed/game to league average. >1.0 means
-    the opponent is BELOW-average defensively (allows more than average ->
-    good matchup for the player). <1.0 means a tougher-than-average defense.
+    Ratio of opponent's PACE-ADJUSTED defensive rating (points allowed per
+    100 possessions) to league average. >1.0 means the opponent is
+    BELOW-average defensively -> good matchup for the player. <1.0 means a
+    tougher-than-average defense.
 
-    Note: this uses TEAM-wide points allowed/game as a proxy, not pace-
-    adjusted per-100-possessions (more precise but harder to source reliably)
-    or position-specific defense (harder still — league DVP tables are
-    JS-rendered and couldn't be fetched reliably). Worth upgrading later.
+    UPGRADED 2026-07-31: now genuinely pace-adjusted, computed by hand from
+    two separately-verified real inputs (points allowed/game from covers.com,
+    pace/possessions-per-game from StatMuse), rather than raw points
+    allowed/game. This is the actual fix for the earlier "mixed pace-adjusted
+    with non-pace-adjusted" lesson — Portland's original 111.8 DRTG claim
+    ("worst in WNBA") turned out to be roughly right after all (our own
+    calculation: 114.21, still 2nd-worst) once we had a properly-computed
+    league average to check it against, rather than an ESTIMATED one.
+
+    Position-specific defense (DVP) is still not used — league DVP tables
+    are JS-rendered and couldn't be fetched reliably. Worth upgrading later
+    if a reliable source turns up.
     """
     return opponent_def_rating / league_avg_def_rating
 
 
-# League average points allowed/game — VERIFIED via covers.com team defense
-# table, all 15 WNBA teams, 2026 season. Raw points allowed/game, NOT
-# pace-adjusted. Update this if you re-verify a newer number, or if you're
-# modeling NBA instead of WNBA once it's back in season (WNBA-specific).
-LEAGUE_AVG_DEF_RATING = 86.88
+# League average PACE-ADJUSTED defensive rating (points allowed per 100
+# possessions) — VERIFIED 2026-07-31, computed by hand from two real,
+# independently-sourced inputs: points-allowed/game (covers.com team defense
+# table) and pace/possessions-per-game (StatMuse), all 15 WNBA teams, 2026
+# season. avg = 108.51. Replaces the earlier raw points-allowed/game metric
+# (86.88), which wasn't wrong, just less precise (didn't account for pace).
+LEAGUE_AVG_DEF_RATING = 108.51
 
 
 def analyze_player(p, league_avg_def_rating=LEAGUE_AVG_DEF_RATING):
@@ -158,14 +169,16 @@ if __name__ == "__main__":
 
     # Each player: real last-10-games log (most recent first, verified via
     # StatMuse, double-checked for no "today"/pre-game contamination) and
-    # tonight's opponent with their VERIFIED points-allowed/game.
+    # tonight's opponent with their VERIFIED pace-adjusted defensive rating
+    # (points allowed per 100 possessions, computed by hand 2026-07-31 from
+    # covers.com points-allowed/game + StatMuse pace, see opponent_adjustment_factor).
     players = [
         {
             "name": "A'ja Wilson",
             "team": "Las Vegas Aces",
             "games": [38, 26, 20, 21, 32, 30, 32, 16, 19, 33],
             "opponent": "Portland Fire",
-            "opponent_def_rating": 90.19,  # 13th of 15 — NOT worst, despite pace-adjusted DRTG saying otherwise
+            "opponent_def_rating": 114.21,  # 2nd-worst pace-adjusted DRTG in the league
             # VERIFIED: Wilson vs Portland specifically this season — 32 pts
             # both June 11 and July 9. Note: July 9 is ALSO one of the 10
             # games in the general log above — a one-game overlap between
@@ -178,14 +191,14 @@ if __name__ == "__main__":
             "team": "Indiana Fever",
             "games": [27, 17, 45, 13, 12, 9, 19, 24, 26, 26],
             "opponent": "Seattle Storm",
-            "opponent_def_rating": 87.03,
+            "opponent_def_rating": 108.08,  # right at league average now
         },
         {
             "name": "Sabrina Ionescu",
             "team": "New York Liberty",
             "games": [29, 21, 12, 28, 25, 14, 17, 9, 14, 16],
             "opponent": "Los Angeles Sparks",
-            "opponent_def_rating": 93.38,  # worst in the league on this metric
+            "opponent_def_rating": 113.23,  # 3rd-worst pace-adjusted DRTG in the league
         },
     ]
 
