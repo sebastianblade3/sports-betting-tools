@@ -23,6 +23,32 @@ from stats_engine import (
 )
 from devig_tool import prompt_market_check
 
+# Batter home/away factor — grounded in real research: league-wide home/away
+# OPS gaps of roughly 30-50 points are commonly documented (on a league
+# average OPS around .720-.750, that's roughly a 4-7% relative gap). This is
+# a DIFFERENT effect from park_factor (which captures THIS SPECIFIC stadium's
+# dimensions) — this captures a player's general home-comfort/travel effect
+# regardless of which park. Using a conservative 3% swing, toward the lower
+# end of the documented range.
+BATTER_HOME_AWAY_FACTOR = {
+    "home": 1.03,
+    "away": 0.97,
+    "neutral": 1.0,
+}
+
+# Pitcher short-rest factor — HONESTLY less rigorously sourced than the other
+# factors in this project. Found real research quantifying ERA increasing
+# ~0.007 per pitch thrown in the PRECEDING start (i.e. carryover fatigue),
+# but couldn't find a clean, direct strikeout-rate-specific effect size for
+# short rest specifically. This estimate (5% reduction) is a reasonable
+# analogy to the well-documented NBA back-to-back effect (3-5%), not a
+# direct MLB citation — flagged as the weakest-evidence factor in the
+# project. Worth replacing if better research turns up.
+PITCHER_REST_FACTOR = {
+    "short_rest": 0.95,  # 4 days or fewer between starts
+    "normal": 1.0,
+}
+
 
 def pitcher_k_adjustment_factor(opponent_k_per_game, league_avg_k_per_game, elasticity=0.7):
     """
@@ -120,13 +146,14 @@ def analyze_pitcher(p, league_avg_k_per_game=LEAGUE_AVG_K_PER_GAME, allow_market
     weighted_avg = weighted_average(games)
 
     situation = p.get("situation", "healthy")
-    situational_factor = SITUATIONAL_FACTORS.get(situation, 1.0)
+    rest = p.get("rest", "normal")
+    context_factor = SITUATIONAL_FACTORS.get(situation, 1.0) * PITCHER_REST_FACTOR.get(rest, 1.0)
     season_avg = p.get("season_avg")  # optional: full-season K/start average
 
     projection_no_adj, raw_stdev, pred_stdev, confidence = project(games, season_avg=season_avg)
     factor = pitcher_k_adjustment_factor(p["opponent_k_per_game"], league_avg_k_per_game)
     projection_adj, _, _, _ = project(
-        games, adjustment_factor=factor, situational_factor=situational_factor, season_avg=season_avg
+        games, adjustment_factor=factor, situational_factor=context_factor, season_avg=season_avg
     )
     widening_pct = (pred_stdev / raw_stdev - 1) * 100
 
@@ -142,7 +169,9 @@ def analyze_pitcher(p, league_avg_k_per_game=LEAGUE_AVG_K_PER_GAME, allow_market
     print(f"Sample size confidence: {confidence}")
     print(f"Opponent K/game: {p['opponent_k_per_game']}  |  League avg: {league_avg_k_per_game}  |  Factor: {factor:.3f}")
     if situation != "healthy":
-        print(f"Situational factor ({situation}): {situational_factor:.2f}")
+        print(f"Situational factor ({situation}): {SITUATIONAL_FACTORS.get(situation, 1.0):.2f}")
+    if rest != "normal":
+        print(f"Rest factor ({rest}): {PITCHER_REST_FACTOR.get(rest, 1.0):.2f}")
     print(f"Projection: {projection_no_adj:.1f} (no adj) -> {projection_adj:.1f} (adjusted)")
 
     final_projection = projection_adj
@@ -194,7 +223,8 @@ def analyze_batter(b, league_avg_era=LEAGUE_AVG_ERA, allow_market_check=True):
     everything else, same as the pitcher side above.
     """
     situation = b.get("situation", "healthy")
-    situational_factor = SITUATIONAL_FACTORS.get(situation, 1.0)
+    home_away = b.get("home_away", "neutral")
+    situational_factor = SITUATIONAL_FACTORS.get(situation, 1.0) * BATTER_HOME_AWAY_FACTOR.get(home_away, 1.0)
     park_factor = b.get("park_factor", 1.0)  # 1.0 = neutral park; already a ratio-to-average, no dampening needed
 
     bullpen_era = b.get("opponent_bullpen_era")
@@ -273,7 +303,9 @@ def analyze_batter(b, league_avg_era=LEAGUE_AVG_ERA, allow_market_check=True):
     if park_factor != 1.0:
         print(f"Park factor: {park_factor:.2f}")
     if situation != "healthy":
-        print(f"Situational factor ({situation}): {situational_factor:.2f}")
+        print(f"Situational factor ({situation}): {SITUATIONAL_FACTORS.get(situation, 1.0):.2f}")
+    if home_away != "neutral":
+        print(f"Home/away factor ({home_away}): {BATTER_HOME_AWAY_FACTOR.get(home_away, 1.0):.2f}")
     print(f"Overall effective factor: {combined_factor:.3f}")
     print(f"Projection: {projection_no_adj:.1f} (no adj) -> {projection_adj:.1f} (fully adjusted)")
 
@@ -363,9 +395,11 @@ def interactive_new_entry():
         season_avg = prompt_optional_float("Their full-season K/start average, if known (blank to skip): ")
         matchup_history = prompt_matchup_history(opponent)
         situation = prompt_situation()
+        rest_choice = input("Pitching on short rest (4 days or fewer)? [y/n]: ").strip().lower()
+        rest = "short_rest" if rest_choice == "y" else "normal"
         pitcher = {
             "name": name, "team": team, "opponent": opponent, "games": games,
-            "opponent_k_per_game": opp_k, "situation": situation,
+            "opponent_k_per_game": opp_k, "situation": situation, "rest": rest,
         }
         if season_avg is not None:
             pitcher["season_avg"] = season_avg
@@ -411,12 +445,15 @@ def interactive_new_entry():
         park_factor = float(park_factor_raw) if park_factor_raw else 1.0
         matchup_history = prompt_matchup_history(opponent_pitcher)
         situation = prompt_situation()
+        home_away_choice = input("Home or away tonight? [home/away] (blank to skip): ").strip().lower()
+        home_away = home_away_choice if home_away_choice in ("home", "away") else "neutral"
 
         batter["opponent_pitcher_era"] = opp_era
         if bullpen_era is not None:
             batter["opponent_bullpen_era"] = bullpen_era
         batter["park_factor"] = park_factor
         batter["situation"] = situation
+        batter["home_away"] = home_away
         if matchup_history:
             batter["matchup_history"] = matchup_history
 

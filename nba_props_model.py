@@ -15,6 +15,28 @@ from stats_engine import (
 )
 from devig_tool import prompt_market_check
 
+# Home/away factor — grounded in real research (not a pure guess): studies of
+# NBA home-court advantage find individual scoring rate increases of roughly
+# 0.04-0.16 points/minute at home (team-dependent), which for a typical
+# rotation player translates to roughly a 3% swing in season scoring output.
+# Using the middle of that range as a reasonable, defensible round number.
+HOME_AWAY_FACTOR = {
+    "home": 1.03,
+    "away": 0.97,
+    "neutral": 1.0,  # default if not specified
+}
+
+# Rest factor — also grounded in real research: NBA teams on zero days rest
+# (back-to-back games) show a well-documented 3-5% scoring decline (multiple
+# independent studies, tens of thousands of games). Using the middle of that
+# range. No comparably strong research found for an "extra rest boost" above
+# normal, so that's left at neutral (1.0) rather than invented.
+REST_FACTOR = {
+    "back_to_back": 0.96,
+    "normal": 1.0,
+    "extra_rest": 1.0,  # no strong research for a boost above normal — kept neutral, not invented
+}
+
 
 def opponent_adjustment_factor(opponent_def_rating, league_avg_def_rating):
     """
@@ -57,13 +79,19 @@ def analyze_player(p, league_avg_def_rating=LEAGUE_AVG_DEF_RATING, allow_market_
     weighted_avg = weighted_average(games)
 
     situation = p.get("situation", "healthy")
-    situational_factor = SITUATIONAL_FACTORS.get(situation, 1.0)
+    home_away = p.get("home_away", "neutral")
+    rest = p.get("rest", "normal")
+    context_factor = (
+        SITUATIONAL_FACTORS.get(situation, 1.0)
+        * HOME_AWAY_FACTOR.get(home_away, 1.0)
+        * REST_FACTOR.get(rest, 1.0)
+    )
     season_avg = p.get("season_avg")  # optional: full-season PPG, blended with recent form
 
     projection_no_adj, raw_stdev, pred_stdev, confidence = project(games, season_avg=season_avg)
     factor = opponent_adjustment_factor(p["opponent_def_rating"], league_avg_def_rating)
     projection_adj, _, _, _ = project(
-        games, adjustment_factor=factor, situational_factor=situational_factor, season_avg=season_avg
+        games, adjustment_factor=factor, situational_factor=context_factor, season_avg=season_avg
     )
     widening_pct = (pred_stdev / raw_stdev - 1) * 100
 
@@ -79,8 +107,12 @@ def analyze_player(p, league_avg_def_rating=LEAGUE_AVG_DEF_RATING, allow_market_
     print(f"Sample size confidence: {confidence}")
     print(f"Opponent points allowed/game: {p['opponent_def_rating']}  |  League avg: {league_avg_def_rating}  |  Factor: {factor:.3f}")
     if situation != "healthy":
-        print(f"Situational factor ({situation}): {situational_factor:.2f}")
-    print(f"Projection: {projection_no_adj:.1f} (no adj) -> {projection_adj:.1f} (opponent + situational adjusted)")
+        print(f"Situational factor ({situation}): {SITUATIONAL_FACTORS.get(situation, 1.0):.2f}")
+    if home_away != "neutral":
+        print(f"Home/away factor ({home_away}): {HOME_AWAY_FACTOR.get(home_away, 1.0):.2f}")
+    if rest != "normal":
+        print(f"Rest factor ({rest}): {REST_FACTOR.get(rest, 1.0):.2f}")
+    print(f"Projection: {projection_no_adj:.1f} (no adj) -> {projection_adj:.1f} (fully adjusted)")
 
     final_projection = projection_adj
     matchup_history = p.get("matchup_history")
@@ -165,6 +197,12 @@ def interactive_new_player():
     }
     situation = situation_map.get(situation_choice, "healthy")
 
+    home_away_choice = input("\nHome or away tonight? [home/away] (blank to skip): ").strip().lower()
+    home_away = home_away_choice if home_away_choice in ("home", "away") else "neutral"
+
+    rest_choice = input("Back-to-back (0 days rest)? [y/n]: ").strip().lower()
+    rest = "back_to_back" if rest_choice == "y" else "normal"
+
     player = {
         "name": name,
         "team": team,
@@ -172,6 +210,8 @@ def interactive_new_player():
         "opponent": opponent,
         "opponent_def_rating": opp_def_rating,
         "situation": situation,
+        "home_away": home_away,
+        "rest": rest,
     }
     if matchup_history:
         player["matchup_history"] = matchup_history
