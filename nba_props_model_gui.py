@@ -303,6 +303,48 @@ def open_window():
     NBAPropsModelWindow(win)
 
 
+def prefill_window(app, data):
+    """
+    Fills in form fields from a data dict of researched-and-verified stats —
+    used by launch_prefilled() so a player can be looked up once (by Claude,
+    in chat) and opened ready-to-review instead of re-typed by hand. Only
+    fills fields present in the dict; everything else keeps its default.
+    Does NOT click Calculate — the human always reviews before running it.
+    """
+    if "name" in data:
+        app.name_entry.insert(0, data["name"])
+    if "team" in data:
+        app.team_entry.insert(0, data["team"])
+    if "opponent" in data:
+        app.opponent_entry.insert(0, data["opponent"])
+    if "games" in data:
+        app.games_entry.insert(0, ", ".join(str(g) for g in data["games"]))
+    if "opponent_def_rating" in data:
+        app.opp_def_entry.insert(0, str(data["opponent_def_rating"]))
+    if "league_avg_def_rating" in data:
+        app.league_avg_entry.delete(0, tk.END)
+        app.league_avg_entry.insert(0, str(data["league_avg_def_rating"]))
+    if "season_avg" in data:
+        app.season_avg_entry.insert(0, str(data["season_avg"]))
+    if "matchup_history" in data:
+        app.matchup_entry.insert(0, ", ".join(str(g) for g in data["matchup_history"]))
+    if "situation" in data:
+        app.situation.set(data["situation"])
+    if "home_away" in data:
+        app.home_away.set(data["home_away"])
+    if "back_to_back" in data:
+        app.back_to_back.set(data["back_to_back"])
+
+
+def launch_prefilled(data):
+    """Opens a standalone window with the form pre-filled from `data`.
+    See prefill_window() for the accepted keys."""
+    root = tk.Tk()
+    app = NBAPropsModelWindow(root)
+    prefill_window(app, data)
+    root.mainloop()
+
+
 if __name__ == "__main__":
     root = tk.Tk()
     NBAPropsModelWindow(root)

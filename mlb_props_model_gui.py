@@ -607,6 +607,102 @@ def open_window():
     MLBPropsModelWindow(win)
 
 
+def prefill_window(app, data):
+    """
+    Fills in form fields from a data dict of researched-and-verified stats —
+    used by launch_prefilled() so a player can be looked up once (by Claude,
+    in chat) and opened ready-to-review instead of re-typed by hand. Only
+    fills fields present in the dict; everything else keeps its default.
+    Does NOT click Calculate — the human always reviews before running it.
+
+    data['mode'] must be 'pitcher' or 'batter' (default 'pitcher'). For
+    batters, data['submode'] must be 'separate' or 'combined' (default
+    'combined') — this picks which stat-log fields get filled.
+    """
+    mode = data.get("mode", "pitcher")
+    app.mode.set(mode)
+    app.rebuild_inputs()
+
+    if mode == "pitcher":
+        if "name" in data:
+            app.p_name.insert(0, data["name"])
+        if "team" in data:
+            app.p_team.insert(0, data["team"])
+        if "opponent" in data:
+            app.p_opponent.insert(0, data["opponent"])
+        if "games" in data:
+            app.p_games.insert(0, ", ".join(str(g) for g in data["games"]))
+        if "opponent_k_per_game" in data:
+            app.p_opp_k.insert(0, str(data["opponent_k_per_game"]))
+        if "league_avg_k_per_game" in data:
+            app.p_league_avg.delete(0, tk.END)
+            app.p_league_avg.insert(0, str(data["league_avg_k_per_game"]))
+        if "season_avg" in data:
+            app.p_season_avg.insert(0, str(data["season_avg"]))
+        if "matchup_history" in data:
+            app.p_matchup.insert(0, ", ".join(str(g) for g in data["matchup_history"]))
+        if "situation" in data:
+            app.p_situation.set(data["situation"])
+        if "short_rest" in data:
+            app.p_short_rest.set(data["short_rest"])
+    else:
+        submode = data.get("submode", "combined")
+        app.batter_submode.set(submode)
+        app.rebuild_batter_substats()
+
+        if "name" in data:
+            app.b_name.insert(0, data["name"])
+        if "team" in data:
+            app.b_team.insert(0, data["team"])
+        if "opponent_pitcher" in data:
+            app.b_opp_pitcher.insert(0, data["opponent_pitcher"])
+
+        if submode == "separate":
+            if "hits" in data:
+                app.b_hits.insert(0, ", ".join(str(x) for x in data["hits"]))
+            if "runs" in data:
+                app.b_runs.insert(0, ", ".join(str(x) for x in data["runs"]))
+            if "rbi" in data:
+                app.b_rbi.insert(0, ", ".join(str(x) for x in data["rbi"]))
+            if "season_avg_hits" in data:
+                app.b_season_hits.insert(0, str(data["season_avg_hits"]))
+            if "season_avg_runs" in data:
+                app.b_season_runs.insert(0, str(data["season_avg_runs"]))
+            if "season_avg_rbi" in data:
+                app.b_season_rbi.insert(0, str(data["season_avg_rbi"]))
+        else:
+            if "games" in data:
+                app.b_games.insert(0, ", ".join(str(x) for x in data["games"]))
+            if "season_avg" in data:
+                app.b_season_avg.insert(0, str(data["season_avg"]))
+
+        if "opponent_pitcher_era" in data:
+            app.b_opp_era.insert(0, str(data["opponent_pitcher_era"]))
+        if "opponent_bullpen_era" in data:
+            app.b_bullpen_era.insert(0, str(data["opponent_bullpen_era"]))
+        if "league_avg_era" in data:
+            app.b_league_avg.delete(0, tk.END)
+            app.b_league_avg.insert(0, str(data["league_avg_era"]))
+        if "park_factor" in data:
+            app.b_park_factor.delete(0, tk.END)
+            app.b_park_factor.insert(0, str(data["park_factor"]))
+        if "matchup_history" in data:
+            app.b_matchup.insert(0, ", ".join(str(x) for x in data["matchup_history"]))
+        if "situation" in data:
+            app.b_situation.set(data["situation"])
+        if "home_away" in data:
+            app.b_home_away.set(data["home_away"])
+
+
+def launch_prefilled(data):
+    """Opens a standalone window with the form pre-filled from `data`.
+    See prefill_window() for the accepted keys."""
+    root = tk.Tk()
+    app = MLBPropsModelWindow(root)
+    prefill_window(app, data)
+    root.mainloop()
+
+
 if __name__ == "__main__":
     root = tk.Tk()
     MLBPropsModelWindow(root)
