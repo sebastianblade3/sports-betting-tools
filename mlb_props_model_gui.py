@@ -8,6 +8,7 @@ edge all imported directly, not reimplemented).
 """
 
 import tkinter as tk
+from datetime import date
 from tkinter import messagebox
 
 from stats_engine import (
@@ -33,6 +34,7 @@ from mlb_props_model import (
     LEAGUE_AVG_K_PER_GAME,
 )
 from devig_tool import devig_two_way, edge
+from calibration_tool import append_entry as log_calibration_entry, LOG_FILE as CALIBRATION_LOG_FILE
 
 SITUATION_LABELS = {
     "healthy": "Healthy",
@@ -59,13 +61,41 @@ class MLBPropsModelWindow:
     def __init__(self, root):
         self.root = root
         self.root.title("MLB Props Model")
-        self.root.geometry("660x960")
 
         self.line_probs = {}
         self.mode = tk.StringVar(value="pitcher")
         self.batter_submode = tk.StringVar(value="combined")
 
-        mode_frame = tk.Frame(root, pady=8)
+        # Scrollable container — this form (esp. batter/separate mode) is
+        # taller than fits on a standard Retina laptop screen (~832 logical
+        # px of usable height), so the whole window scrolls instead of
+        # clipping fields off the bottom.
+        outer = tk.Frame(root)
+        outer.pack(fill="both", expand=True)
+        canvas = tk.Canvas(outer, borderwidth=0, highlightthickness=0)
+        outer_scrollbar = tk.Scrollbar(outer, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=outer_scrollbar.set)
+        outer_scrollbar.pack(side="right", fill="y")
+        canvas.pack(side="left", fill="both", expand=True)
+
+        content = tk.Frame(canvas)
+        content_window = canvas.create_window((0, 0), window=content, anchor="nw")
+
+        def _on_content_configure(event):
+            canvas.configure(scrollregion=canvas.bbox("all"))
+
+        def _on_canvas_configure(event):
+            canvas.itemconfig(content_window, width=event.width)
+
+        content.bind("<Configure>", _on_content_configure)
+        canvas.bind("<Configure>", _on_canvas_configure)
+
+        def _on_mousewheel(event):
+            canvas.yview_scroll(int(-1 * (event.delta)), "units")
+
+        canvas.bind_all("<MouseWheel>", _on_mousewheel)
+
+        mode_frame = tk.Frame(content, pady=8)
         mode_frame.pack(fill="x")
         tk.Label(mode_frame, text="Prop type:").pack(side="left", padx=10)
         tk.Radiobutton(mode_frame, text="Pitcher (strikeouts)", variable=self.mode, value="pitcher",
@@ -73,12 +103,12 @@ class MLBPropsModelWindow:
         tk.Radiobutton(mode_frame, text="Batter (H+R+RBI)", variable=self.mode, value="batter",
                        command=self.rebuild_inputs).pack(side="left")
 
-        self.inputs_frame = tk.Frame(root)
+        self.inputs_frame = tk.Frame(content)
         self.inputs_frame.pack(fill="x")
 
-        tk.Button(root, text="Calculate Projection", width=22, command=self.calculate).pack(pady=8)
+        tk.Button(content, text="Calculate Projection", width=22, command=self.calculate).pack(pady=8)
 
-        market_frame = tk.LabelFrame(root, text="Optional: check a line against real market odds", padx=10, pady=8)
+        market_frame = tk.LabelFrame(content, text="Optional: check a line against real market odds", padx=10, pady=8)
         market_frame.pack(fill="x", padx=10, pady=(0, 8))
 
         tk.Label(market_frame, text="Line:").grid(row=0, column=0, sticky="w", padx=5)
@@ -96,7 +126,22 @@ class MLBPropsModelWindow:
 
         tk.Button(market_frame, text="Check Edge", command=self.check_edge).grid(row=3, column=0, columnspan=2, pady=6)
 
-        output_frame = tk.Frame(root)
+        log_frame = tk.LabelFrame(content, text="Log this prediction for calibration", padx=10, pady=8)
+        log_frame.pack(fill="x", padx=10, pady=(0, 8))
+
+        tk.Label(log_frame, text="Uses the same 'Line' selected above.").grid(
+            row=0, column=0, columnspan=2, sticky="w", padx=5
+        )
+        tk.Label(log_frame, text="Date:").grid(row=1, column=0, sticky="w", padx=5, pady=3)
+        self.log_date_entry = tk.Entry(log_frame, width=14)
+        self.log_date_entry.grid(row=1, column=1, sticky="w", padx=5, pady=3)
+        self.log_date_entry.insert(0, date.today().isoformat())
+
+        tk.Button(log_frame, text="Log Prediction", command=self.log_prediction).grid(
+            row=2, column=0, columnspan=2, pady=6
+        )
+
+        output_frame = tk.Frame(content)
         output_frame.pack(padx=10, pady=(0, 10), fill="both", expand=True)
         scrollbar = tk.Scrollbar(output_frame)
         scrollbar.pack(side="right", fill="y")
@@ -105,6 +150,9 @@ class MLBPropsModelWindow:
         scrollbar.config(command=self.output.yview)
 
         self.rebuild_inputs()
+
+        self.root.update_idletasks()
+        self.root.geometry("680x700")
 
     # ---------- form construction ----------
 
@@ -392,6 +440,10 @@ class MLBPropsModelWindow:
             self.line_probs[line_half] = p_over
             lines.append(f"  Over {line_half}: {p_over:.1%} chance")
 
+        self.prediction_description = f"{name} (K's) vs {opponent}"
+        self.final_projection = final_projection
+        self.pred_stdev = pred_stdev
+
         self._render_output(lines, list(self.line_probs.keys()))
 
     def _calculate_batter(self):
@@ -542,6 +594,10 @@ class MLBPropsModelWindow:
             self.line_probs[line] = p_over
             lines.append(f"  Over {line}: {p_over:.1%} chance")
 
+        self.prediction_description = f"{name} (H+R+RBI) vs {opponent_pitcher}"
+        self.final_projection = final_projection
+        self.pred_stdev = pred_stdev
+
         self._render_output(lines, list(self.line_probs.keys()))
 
     def _render_output(self, lines, prop_lines):
@@ -600,6 +656,36 @@ class MLBPropsModelWindow:
 
         self.output.insert(tk.END, "\n" + "\n".join(lines))
         self.output.see(tk.END)
+
+    def log_prediction(self):
+        try:
+            self._log_prediction()
+        except Exception as e:
+            messagebox.showerror("Something went wrong", f"{type(e).__name__}: {e}")
+
+    def _log_prediction(self):
+        if not self.line_probs:
+            messagebox.showerror("No projection yet", "Calculate a projection first.")
+            return
+        line_str = self.line_var.get()
+        if not line_str:
+            messagebox.showerror("No line selected", "Choose a line to log.")
+            return
+        line = float(line_str)
+        predicted_prob = self.line_probs[line]
+
+        log_date = self.log_date_entry.get().strip()
+        if not log_date:
+            messagebox.showerror("Missing date", "Enter a date for this prediction.")
+            return
+
+        description = f"{self.prediction_description} over {line}"
+        notes = f"model projection {self.final_projection:.1f}, predictive stdev {self.pred_stdev:.1f}"
+        log_calibration_entry(log_date, description, predicted_prob, actual_outcome=None, notes=notes)
+
+        messagebox.showinfo(
+            "Logged", f"Logged as PENDING to {CALIBRATION_LOG_FILE.name}.\nSettle it once the game result is in."
+        )
 
 
 def open_window():

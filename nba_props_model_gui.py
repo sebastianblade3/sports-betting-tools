@@ -7,6 +7,7 @@ edge all imported directly, not reimplemented).
 """
 
 import tkinter as tk
+from datetime import date
 from tkinter import messagebox
 
 from stats_engine import (
@@ -24,6 +25,7 @@ from nba_props_model import (
     REST_FACTOR,
 )
 from devig_tool import devig_two_way, edge
+from calibration_tool import append_entry as log_calibration_entry, LOG_FILE as CALIBRATION_LOG_FILE
 
 SITUATION_LABELS = {
     "healthy": "Healthy",
@@ -37,11 +39,38 @@ class NBAPropsModelWindow:
     def __init__(self, root):
         self.root = root
         self.root.title("NBA/WNBA Points Prop Model")
-        self.root.geometry("620x820")
 
         self.line_probs = {}
 
-        form = tk.Frame(root, pady=10)
+        # Scrollable container — this form has grown too tall to fit fully
+        # on a standard laptop screen (Retina scaling gives ~832 logical px
+        # of usable height), so the whole window scrolls instead of clipping.
+        outer = tk.Frame(root)
+        outer.pack(fill="both", expand=True)
+        canvas = tk.Canvas(outer, borderwidth=0, highlightthickness=0)
+        outer_scrollbar = tk.Scrollbar(outer, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=outer_scrollbar.set)
+        outer_scrollbar.pack(side="right", fill="y")
+        canvas.pack(side="left", fill="both", expand=True)
+
+        content = tk.Frame(canvas)
+        content_window = canvas.create_window((0, 0), window=content, anchor="nw")
+
+        def _on_content_configure(event):
+            canvas.configure(scrollregion=canvas.bbox("all"))
+
+        def _on_canvas_configure(event):
+            canvas.itemconfig(content_window, width=event.width)
+
+        content.bind("<Configure>", _on_content_configure)
+        canvas.bind("<Configure>", _on_canvas_configure)
+
+        def _on_mousewheel(event):
+            canvas.yview_scroll(int(-1 * (event.delta)), "units")
+
+        canvas.bind_all("<MouseWheel>", _on_mousewheel)
+
+        form = tk.Frame(content, pady=10)
         form.pack(fill="x")
 
         r = 0
@@ -117,9 +146,9 @@ class NBAPropsModelWindow:
         )
         r += 1
 
-        tk.Button(root, text="Calculate Projection", width=22, command=self.calculate).pack(pady=8)
+        tk.Button(content, text="Calculate Projection", width=22, command=self.calculate).pack(pady=8)
 
-        market_frame = tk.LabelFrame(root, text="Optional: check a line against real market odds", padx=10, pady=8)
+        market_frame = tk.LabelFrame(content, text="Optional: check a line against real market odds", padx=10, pady=8)
         market_frame.pack(fill="x", padx=10, pady=(0, 8))
 
         tk.Label(market_frame, text="Line:").grid(row=0, column=0, sticky="w", padx=5)
@@ -137,13 +166,31 @@ class NBAPropsModelWindow:
 
         tk.Button(market_frame, text="Check Edge", command=self.check_edge).grid(row=3, column=0, columnspan=2, pady=6)
 
-        output_frame = tk.Frame(root)
+        log_frame = tk.LabelFrame(content, text="Log this prediction for calibration", padx=10, pady=8)
+        log_frame.pack(fill="x", padx=10, pady=(0, 8))
+
+        tk.Label(log_frame, text="Uses the same 'Line' selected above.").grid(
+            row=0, column=0, columnspan=2, sticky="w", padx=5
+        )
+        tk.Label(log_frame, text="Date:").grid(row=1, column=0, sticky="w", padx=5, pady=3)
+        self.log_date_entry = tk.Entry(log_frame, width=14)
+        self.log_date_entry.grid(row=1, column=1, sticky="w", padx=5, pady=3)
+        self.log_date_entry.insert(0, date.today().isoformat())
+
+        tk.Button(log_frame, text="Log Prediction", command=self.log_prediction).grid(
+            row=2, column=0, columnspan=2, pady=6
+        )
+
+        output_frame = tk.Frame(content)
         output_frame.pack(padx=10, pady=(0, 10), fill="both", expand=True)
         scrollbar = tk.Scrollbar(output_frame)
         scrollbar.pack(side="right", fill="y")
         self.output = tk.Text(output_frame, height=16, width=68, wrap="word", yscrollcommand=scrollbar.set)
         self.output.pack(side="left", fill="both", expand=True)
         scrollbar.config(command=self.output.yview)
+
+        self.root.update_idletasks()
+        self.root.geometry("640x700")
 
     def parse_games(self, raw):
         parts = [x.strip() for x in raw.split(",") if x.strip()]
@@ -241,6 +288,11 @@ class NBAPropsModelWindow:
             self.line_probs[line] = p_over
             lines.append(f"  Over {line}: {p_over:.1%} chance")
 
+        self.player_name = name
+        self.player_opponent = opponent
+        self.final_projection = final_projection
+        self.pred_stdev = pred_stdev
+
         self.output.delete("1.0", tk.END)
         self.output.insert(tk.END, "\n".join(lines))
 
@@ -296,6 +348,36 @@ class NBAPropsModelWindow:
 
         self.output.insert(tk.END, "\n" + "\n".join(lines))
         self.output.see(tk.END)
+
+    def log_prediction(self):
+        try:
+            self._log_prediction()
+        except Exception as e:
+            messagebox.showerror("Something went wrong", f"{type(e).__name__}: {e}")
+
+    def _log_prediction(self):
+        if not self.line_probs:
+            messagebox.showerror("No projection yet", "Calculate a projection first.")
+            return
+        line_str = self.line_var.get()
+        if not line_str:
+            messagebox.showerror("No line selected", "Choose a line to log.")
+            return
+        line = float(line_str)
+        predicted_prob = self.line_probs[line]
+
+        log_date = self.log_date_entry.get().strip()
+        if not log_date:
+            messagebox.showerror("Missing date", "Enter a date for this prediction.")
+            return
+
+        description = f"{self.player_name} vs {self.player_opponent} over {line}"
+        notes = f"model projection {self.final_projection:.1f}, predictive stdev {self.pred_stdev:.1f}"
+        log_calibration_entry(log_date, description, predicted_prob, actual_outcome=None, notes=notes)
+
+        messagebox.showinfo(
+            "Logged", f"Logged as PENDING to {CALIBRATION_LOG_FILE.name}.\nSettle it once the game result is in."
+        )
 
 
 def open_window():
