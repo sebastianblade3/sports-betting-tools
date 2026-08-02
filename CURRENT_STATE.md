@@ -39,6 +39,18 @@ The original text-menu CLI version is preserved untouched in
 `Snapshot-2026-07-31/` and `Sports Betting Tools (Text Menu).command` on the
 Desktop, per explicit standing instruction — **never modify these**.
 
+**Added 2026-08-02: Claude-assisted auto-fill.** `nba_props_model_gui.py`
+and `mlb_props_model_gui.py` both have `prefill_window(app, data)` /
+`launch_prefilled(data)`. Workflow: tell Claude a player's name in chat,
+Claude researches + verifies their real current stats (same standard as the
+demo data — cross-checked, honestly flagged if a number is weaker quality),
+then calls `launch_prefilled()` to open the form already filled in. It never
+auto-clicks Calculate — the human reviews the pre-filled numbers first. This
+was a deliberate choice over building a scraper or paid API directly into
+the app: keeps the project's standing verify-before-trust practice intact,
+costs nothing extra, at the cost of only working inside a Claude Code
+session (not a fully standalone one-click app feature).
+
 Repo: `github.com/sebastianblade3/sports-betting-tools` (public). Platform:
 **user bets on PrizePicks** — needs ~55-58%+ per-leg confidence, not just
 >50% (see [[prizepicks_platform]] memory).
