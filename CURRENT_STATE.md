@@ -132,12 +132,37 @@ GUI-converted tools (opens directly in-app) from not-yet-converted ones
 `"gui"`/`"terminal"` markers — makes it easy to convert the remaining 4
 tools (NBA/WNBA model, MLB model, De-Vig, Calibration Tracker) one at a time.
 
+## Done (2026-08-01): de-vig market-check integrated directly into the models
+
+User asked for 4 refinement ideas, one at a time, thoroughly: (1) de-vig
+integration [DONE, this entry], (2) Kelly criterion sizing, (3) bankroll/ROI
+tracker, (4) home/away + rest-days context.
+
+Added `check_prop_edge()` and `prompt_market_check()` to `devig_tool.py` —
+after `nba_props_model.py`/`mlb_props_model.py` (pitchers AND batters) show
+their probability table, you can now pick one of the lines shown and
+immediately check it against real market odds (asks for Over/Under American
+odds, de-vigs them, shows the edge) — no more manually re-typing numbers
+into a separate tool. `allow_market_check=False` on the hardcoded demo calls
+so the demo doesn't prompt for input. Fixed a redundant double
+"do you want to check odds?" question along the way (added
+`already_confirmed` param to `prompt_market_check`). Tested all 3 call paths
+directly (NBA player, MLB pitcher, MLB batter) — verified math by hand
+(symmetric -110/-110 correctly de-vigs to exactly 50%).
+
 ## ▶ RESUME HERE
 
-**GUI conversion in progress**: EV Calculator done and working (with the
-Python version fix). Next: convert De-Vig Calculator, then Calibration
-Tracker, then the bigger ones (NBA/WNBA model, MLB model — most fields).
-Remember to test each with the modern Python
+**Working through 4 refinement ideas, one at a time**: de-vig integration
+done (see above). Next up: **Kelly criterion bet sizing** — given an edge
+and bankroll, recommend how much to actually stake. After that: bankroll/ROI
+tracker (companion to calibration_tool.py, which tracks probability accuracy
+but not actual money won/lost), then home/away + rest-days context (neither
+sport model accounts for this at all currently).
+
+Separately, GUI conversion is in progress: EV Calculator done and working
+(with the Python version fix). Still to convert: De-Vig Calculator,
+Calibration Tracker, NBA/WNBA model, MLB model. Remember to test each with
+the modern Python
 (`/Library/Frameworks/Python.framework/Versions/3.13/bin/python3`), not the
 system one, to avoid re-hitting the Tk 8.5 rendering bug.
 
