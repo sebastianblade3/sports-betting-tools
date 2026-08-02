@@ -22,6 +22,8 @@ TOOLS = [
     ("MLB Props Model", "terminal", "mlb_props_model.py"),
     ("De-Vig Calculator", "terminal", "devig_tool.py"),
     ("Calibration Tracker", "terminal", "calibration_tool.py"),
+    ("Kelly Stake Sizing", "terminal", "kelly_tool.py"),
+    ("Bankroll / ROI Tracker", "terminal", "bankroll_tool.py"),
 ]
 
 
@@ -44,7 +46,7 @@ def launch_gui(module_name):
 def build_window():
     root = tk.Tk()
     root.title("Sports Betting Tools")
-    root.geometry("340x350")
+    root.geometry("340x460")
     root.resizable(False, False)
 
     title = tk.Label(root, text="Sports Betting Tools", font=("Helvetica", 16, "bold"))
