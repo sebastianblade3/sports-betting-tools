@@ -23,7 +23,7 @@ TOOLS = [
     ("De-Vig Calculator", "gui", "devig_tool_gui"),
     ("Calibration Tracker", "terminal", "calibration_tool.py"),
     ("Kelly Stake Sizing", "gui", "kelly_tool_gui"),
-    ("Bankroll / ROI Tracker", "terminal", "bankroll_tool.py"),
+    ("Bankroll / ROI Tracker", "gui", "bankroll_tool_gui"),
 ]
 
 
