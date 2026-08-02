@@ -22,7 +22,7 @@ TOOLS = [
     ("MLB Props Model", "terminal", "mlb_props_model.py"),
     ("De-Vig Calculator", "gui", "devig_tool_gui"),
     ("Calibration Tracker", "terminal", "calibration_tool.py"),
-    ("Kelly Stake Sizing", "terminal", "kelly_tool.py"),
+    ("Kelly Stake Sizing", "gui", "kelly_tool_gui"),
     ("Bankroll / ROI Tracker", "terminal", "bankroll_tool.py"),
 ]
 
