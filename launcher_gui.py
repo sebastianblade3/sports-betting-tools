@@ -21,7 +21,7 @@ TOOLS = [
     ("NBA/WNBA Points Prop Model", "terminal", "nba_props_model.py"),
     ("MLB Props Model", "terminal", "mlb_props_model.py"),
     ("De-Vig Calculator", "gui", "devig_tool_gui"),
-    ("Calibration Tracker", "terminal", "calibration_tool.py"),
+    ("Calibration Tracker", "gui", "calibration_tool_gui"),
     ("Kelly Stake Sizing", "gui", "kelly_tool_gui"),
     ("Bankroll / ROI Tracker", "gui", "bankroll_tool_gui"),
 ]
