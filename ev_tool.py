@@ -15,6 +15,8 @@ project, with blank result fields to fill in after the games finish.
 import datetime
 from pathlib import Path
 
+from kelly_tool import kelly_fraction_binary, kelly_fraction_general, print_recommendation
+
 VAULT_PROJECT_DIR = Path(__file__).resolve().parent
 MATCH_NOTES = VAULT_PROJECT_DIR / "Match-Notes.md"
 
@@ -134,6 +136,19 @@ def main():
             print(f"  {k}/{n} correct: {dp_k:.2%} chance, pays {mult}x")
         print(f"Expected return per $1 staked: {ev + 1:.3f}")
         print(f"EV per $1 staked: {ev:+.3f}  ({'+EV' if ev > 0 else '-EV'})")
+
+    if ev > 0:
+        want_kelly = input("\nGet a Kelly-criterion stake size recommendation? [y/n]: ").strip().lower()
+        if want_kelly == "y":
+            bankroll = float(input("Your total bankroll ($): ").strip())
+            fractional_raw = input("Kelly fraction to use (e.g. 0.25 for quarter-Kelly) [0.25]: ").strip()
+            fractional = float(fractional_raw) if fractional_raw else 0.25
+            if mode == "power":
+                f = kelly_fraction_binary(combined, multiplier)
+            else:
+                dp = exact_count_distribution(probs)
+                f = kelly_fraction_general(dp, payout_table)
+            print_recommendation(bankroll, f, fractional=fractional)
 
     log_it = input("\nLog this entry to Match-Notes.md? [y/n]: ").strip().lower()
     if log_it == "y":
