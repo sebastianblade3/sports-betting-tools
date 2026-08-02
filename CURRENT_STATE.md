@@ -150,14 +150,34 @@ so the demo doesn't prompt for input. Fixed a redundant double
 directly (NBA player, MLB pitcher, MLB batter) — verified math by hand
 (symmetric -110/-110 correctly de-vigs to exactly 50%).
 
+## Done (2026-08-01): Kelly criterion bet sizing built and integrated
+
+Built `kelly_tool.py`: `kelly_fraction_binary()` (closed-form Kelly for
+Power Play win/lose bets — verified against the textbook 60%-at-even-money
+case, gives exactly 0.2000) and `kelly_fraction_general()` (Flex Play has no
+closed form since it's multiple partial-payout outcomes, not win/lose — uses
+ternary/golden-section search to numerically maximize expected log wealth
+over the whole payout distribution; verified: real 3-pick edge gives 16.9%
+Kelly fraction, an all-coinflip bad bet correctly returns 0%).
+
+Defaults to **quarter-Kelly** (25%), not full Kelly — deliberate, standard
+practice, explained in the output: full Kelly is mathematically optimal for
+growth but very sensitive to the probability estimate being wrong (which it
+sometimes will be), so fractional Kelly trades some growth for much less
+variance/risk of ruin.
+
+Integrated into `ev_tool.py`: after computing a +EV entry, offers a Kelly
+stake recommendation right there (bankroll + fraction choice) instead of a
+separate tool. Verified end-to-end on the known 3-pick example: full Kelly
+6.0% (matches 0.2482 - 0.7518/4 by hand), quarter-Kelly $15.07 on $1000.
+
 ## ▶ RESUME HERE
 
 **Working through 4 refinement ideas, one at a time**: de-vig integration
-done (see above). Next up: **Kelly criterion bet sizing** — given an edge
-and bankroll, recommend how much to actually stake. After that: bankroll/ROI
-tracker (companion to calibration_tool.py, which tracks probability accuracy
-but not actual money won/lost), then home/away + rest-days context (neither
-sport model accounts for this at all currently).
+done, Kelly criterion done (see above). Next up: **bankroll/ROI tracker**
+(companion to calibration_tool.py, which tracks probability accuracy but not
+actual money won/lost), then home/away + rest-days context (neither sport
+model accounts for this at all currently).
 
 Separately, GUI conversion is in progress: EV Calculator done and working
 (with the Python version fix). Still to convert: De-Vig Calculator,
