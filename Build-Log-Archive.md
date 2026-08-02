@@ -179,3 +179,99 @@ was fixed by making the repo public, but write-back (commit + push) may
 need separate credentials inside the cloud sandbox that were never
 verified. Triggered a manual test run to diagnose live — see
 CURRENT_STATE.md for the outcome.
+
+## 2026-08-01 — Four refinement ideas, one by one
+
+User asked for refinement ideas; picked all 4 offered, done in order: (1)
+de-vig integration, (2) Kelly criterion sizing, (3) bankroll/ROI tracker,
+(4) home/away + rest-days context.
+
+**De-vig integration**: added `check_prop_edge()`/`prompt_market_check()` to
+`devig_tool.py` — after either prop model shows its probability table, you
+can pick a line and check it against real market odds right there. Fixed a
+redundant double "check odds?" prompt via an `already_confirmed` param.
+
+**Kelly criterion**: built `kelly_tool.py` — `kelly_fraction_binary()`
+(closed-form, verified against the textbook 60%-at-even-money case, exactly
+0.2000) and `kelly_fraction_general()` (Flex Play has no closed form since
+it's multi-outcome, uses ternary/golden-section search maximizing expected
+log wealth — verified: real 3-pick edge gives 16.9%, all-coinflip bet
+correctly returns 0%). Defaults to quarter-Kelly, not full Kelly — standard
+risk-reduction practice. Integrated into `ev_tool.py` right after a +EV
+result.
+
+**Bankroll/ROI tracker**: built `bankroll_tool.py` + `bankroll_log.csv` —
+logs real bets, computes payout/profit, running report (total staked/
+returned, net profit, ROI%, win rate, cumulative profit). Deliberately
+separate from `calibration_tool.py` (that tracks probability accuracy, this
+tracks actual money — you can be well-calibrated and still lose on bad
+sizing, or vice versa). Verified with synthetic data then cleared before
+committing (real log started genuinely empty).
+
+**Home/away + rest-days context**: NBA/WNBA got `HOME_AWAY_FACTOR` (home
+1.03/away 0.97, from real research on 0.04-0.16 pts/min home scoring boost)
+and `REST_FACTOR` (back-to-back 0.96, from documented 3-5% scoring decline
+on zero rest). MLB got `BATTER_HOME_AWAY_FACTOR` (same 1.03/0.97, from
+documented 30-50pt home/away OPS gaps) and `PITCHER_REST_FACTOR` (short rest
+0.95 — honestly flagged as the weakest-evidence factor in the project, an
+analogy to the NBA number rather than a direct MLB citation). All wired into
+the existing situational_factor pipeline for both sports.
+
+## 2026-08-01/02 — Converted all 7 CLI tools to real button/form GUIs
+
+Starting point: a typed-number text-menu CLI for every tool, launched via
+`launcher_gui.py` which only distinguished "gui" (in-app window) vs
+"terminal" (opens a new Terminal running the old script) per tool.
+
+**Blocking bug hit first**: `ev_tool_gui.py` (the first conversion)
+wouldn't render its dynamically-added leg-entry widgets after clicking "Set
+Up Legs" — direct Tk introspection confirmed the widgets WERE created and
+mapped correctly, just not painting. Root cause: system Python's bundled
+Tcl/Tk 8.5.9 (2009) has known widget-rendering bugs on modern macOS. Fixed
+by installing Python 3.13.9 from python.org (MD5-verified installer, ships
+Tcl/Tk 8.6.17) and repointing both `Sports Betting Tools.command` launchers
+at it explicitly (falling back to system `python3` if that path is missing).
+**Every GUI tool from this point on was tested with the modern Python
+path**, not the system one.
+
+Converted in order, each following the same pattern — reuse the existing
+tested calculation functions directly (never reimplement the math), verify
+the GUI's output is identical to the CLI's output on a known/verified
+example, take a screenshot to confirm the layout actually renders, then wire
+into `launcher_gui.py`'s `TOOLS` list and commit:
+
+1. **EV/Parlay Calculator** (`ev_tool_gui.py`) — Power/Flex radio buttons,
+   leg-count spinner, dynamic label+probability rows, Kelly stake
+   recommendation on +EV. Verified against the known 3-pick example.
+2. **De-Vig Calculator** (`devig_tool_gui.py`) — verified against the real
+   Tigers(-140)/Orioles(+120) market (56.2%/43.8%, 3.79pp vig).
+3. **Kelly Stake Sizing** (`kelly_tool_gui.py`) — Power/Flex mode selector,
+   dynamic leg-probability rows for Flex. Verified: p=0.60/3.0x -> 40% full
+   Kelly, $100 stake on $1000 bankroll at quarter-Kelly.
+4. **Bankroll/ROI Tracker** (`bankroll_tool_gui.py`) — log-a-bet form +
+   live report. Verified on a temp log ($10@5x won + $20@3x lost -> +66.7%
+   ROI); confirmed the real `bankroll_log.csv` was untouched by testing.
+5. **Calibration Tracker** (`calibration_tool_gui.py`) — log-a-prediction
+   form + live Brier score/bucket report. Verified Brier score math on a
+   temp log; confirmed the real `calibration_log.csv` (4 verified entries,
+   including Ty France's real 7/28 result) displays correctly and was
+   untouched.
+6. **NBA/WNBA Points Prop Model** (`nba_props_model_gui.py`) — full form
+   (games, opponent def rating, season avg, matchup history, situational
+   factor, home/away, rest) plus a market-check panel with a line dropdown
+   populated after calculating. Verified byte-for-byte identical output
+   against the real `analyze_player()` call on the verified A'ja Wilson vs
+   Portland Fire example (30.7 final projection).
+7. **MLB Props Model** (`mlb_props_model_gui.py`) — most complex conversion:
+   a Pitcher/Batter mode selector, with a further Separate-substats/Combined
+   sub-mode for batters (sub-stat mode supports optional bullpen ERA blend
+   and park factor). Verified byte-for-byte identical output against the
+   real `analyze_pitcher()`/`analyze_batter()` calls on the verified Troy
+   Melton (6.4 K projection) and Ty France (3.5 H+R+RBI projection)
+   examples, including the market-check edge math.
+
+End state: `launcher_gui.py` now opens every tool as a real in-app GUI form
+— no typing into Terminal anywhere in the toolset. The original text-menu
+version is preserved untouched in `Snapshot-2026-07-31/` and
+`Sports Betting Tools (Text Menu).command` on the Desktop per explicit
+standing instruction — never to be modified.
