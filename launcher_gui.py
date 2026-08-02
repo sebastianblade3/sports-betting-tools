@@ -18,7 +18,7 @@ if str(FOLDER) not in sys.path:
 # label -> ("gui", module_name) once converted, or ("terminal", script_filename) until then
 TOOLS = [
     ("EV / Parlay Calculator", "gui", "ev_tool_gui"),
-    ("NBA/WNBA Points Prop Model", "terminal", "nba_props_model.py"),
+    ("NBA/WNBA Points Prop Model", "gui", "nba_props_model_gui"),
     ("MLB Props Model", "terminal", "mlb_props_model.py"),
     ("De-Vig Calculator", "gui", "devig_tool_gui"),
     ("Calibration Tracker", "gui", "calibration_tool_gui"),
