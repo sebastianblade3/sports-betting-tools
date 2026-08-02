@@ -93,6 +93,13 @@ class EVToolWindow:
 
             self.leg_rows.append((label_entry, prob_entry))
 
+        # Force an immediate redraw. In some environments (sandboxed launch,
+        # missing Accessibility/Screen Recording permission for the Python
+        # process) Tk's normal automatic repaint after adding widgets can lag
+        # significantly — this forces it to happen right away instead of
+        # waiting on the next natural event loop pass.
+        self.legs_frame.update_idletasks()
+
     def parse_prob(self, raw):
         raw = raw.strip().rstrip("%")
         val = float(raw)
