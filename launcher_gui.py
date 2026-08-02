@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Button-based launcher for the sports betting tools. Tools that have been
-converted to a real GUI form open directly in this same app (no typing into
-Terminal at all). Tools not yet converted still open in a new Terminal
-window as before — being converted one at a time.
+Button-based launcher for the sports betting tools. All 7 tools have been
+converted to real GUI forms and open directly in this same app (no typing
+into Terminal at all). launch_terminal() is kept as a fallback path in case
+a future tool is added before it gets a GUI.
 """
 
 import subprocess
@@ -19,7 +19,7 @@ if str(FOLDER) not in sys.path:
 TOOLS = [
     ("EV / Parlay Calculator", "gui", "ev_tool_gui"),
     ("NBA/WNBA Points Prop Model", "gui", "nba_props_model_gui"),
-    ("MLB Props Model", "terminal", "mlb_props_model.py"),
+    ("MLB Props Model", "gui", "mlb_props_model_gui"),
     ("De-Vig Calculator", "gui", "devig_tool_gui"),
     ("Calibration Tracker", "gui", "calibration_tool_gui"),
     ("Kelly Stake Sizing", "gui", "kelly_tool_gui"),
