@@ -17,7 +17,9 @@ Full toolset built and working, all in `Projects/Sports-Betting/`:
 - `kelly_tool.py` — Kelly criterion stake sizing (binary + multi-outcome)
 - `bankroll_tool.py` + `bankroll_log.csv` — real bet log, ROI/win-rate report
 - `calibration_tool.py` + `calibration_log.csv` — Brier score + bucketed
-  calibration report (4 real logged entries so far)
+  calibration report (4 real settled entries so far). Supports **pending**
+  predictions (logged before the outcome is known, `actual_outcome` blank)
+  via `settle_entry()` — settle once the real result is in.
 - `stats_engine.py` — shared math: recency weighting, predictive stdev,
   matchup shrinkage, elasticity-dampened ratios, situational/park factors
 
@@ -51,6 +53,28 @@ the app: keeps the project's standing verify-before-trust practice intact,
 costs nothing extra, at the cost of only working inside a Claude Code
 session (not a fully standalone one-click app feature).
 
+**Added 2026-08-02: "Log this prediction" — closes the projection-to-
+calibration loop.** `nba_props_model_gui.py` and `mlb_props_model_gui.py`
+both have a "Log this prediction for calibration" panel next to the
+market-check panel — after calculating, pick the line (same dropdown the
+market check uses) and click Log Prediction to write it to
+`calibration_log.csv` as a **pending** entry (outcome filled in later via
+`calibration_tool_gui.py`'s new "Settle a pending prediction" panel). This
+was the highest-priority gap identified when auditing the toolset: the
+calibration and bankroll logs existed but nothing fed them without a
+separate manual re-typing step, so in practice they'd stayed nearly empty.
+
+Also fixed while building this: both prop model GUIs were calling
+`self.root.geometry()` too early (before all widgets existed), and on this
+Retina display (2560x1664 physical, ~832 logical px of usable height)
+macOS was silently clamping the window well short of the requested size —
+cutting the bottom of the form off entirely with no visible error. Fixed
+by wrapping the window content in a scrollable canvas (mouse-wheel enabled)
+instead of fighting fixed pixel heights. **Any future new panels added to
+these two GUIs should go inside the existing `content` frame**, not a bare
+`root`-parented widget, or they'll silently render off the visible area
+again.
+
 Repo: `github.com/sebastianblade3/sports-betting-tools` (public). Platform:
 **user bets on PrizePicks** — needs ~55-58%+ per-leg confidence, not just
 >50% (see [[prizepicks_platform]] memory).
@@ -78,13 +102,18 @@ trig_01RaDzAHsJaXdnGUCZAbZAXi (MLB) if worth debugging properly later.
 
 ## ▶ RESUME HERE
 
-All 7 tools are converted to GUIs, tested, and pushed — this was the last
-open task from the "yes lets keep going for all of the tools" request. No
-pending build work right now.
+All 7 tools are converted to GUIs, the Claude-assisted auto-fill workflow
+is built, and the projection-to-calibration logging loop is closed — all
+tested and pushed. No pending build work right now.
 
-Next natural step, if the user wants to keep building: start actually using
-the tools for real, current games and **log every real prediction +
-outcome into calibration_log.csv** — only 4 entries exist so far, nowhere
-near enough for calibration_tool.py's report to be meaningful. That's the
-main lever left to actually validate (or correct) the judgment-call
-elasticity/situational values above.
+Next natural step: actually use the tools on real, current games — research
+a player, log the prediction as pending, settle it once the game result is
+in. That's the only way `calibration_log.csv` grows past its current 4
+entries, which is the main lever left to validate (or correct) the
+judgment-call elasticity/situational values in the honest-caveats section
+above. Once there's a real backlog of settled predictions, that's also the
+natural trigger point for the user's longer-term goal — wiring in a real
+stats API so the app can run the whole pipeline itself (see
+[[sports_betting_api_roadmap]] memory) — since a real API's fetched numbers
+would need the same kind of correctness check this calibration data
+provides.
