@@ -21,6 +21,7 @@ from stats_engine import (
     blend_recent_and_season,
     SITUATIONAL_FACTORS,
 )
+from devig_tool import prompt_market_check
 
 
 def pitcher_k_adjustment_factor(opponent_k_per_game, league_avg_k_per_game, elasticity=0.7):
@@ -111,7 +112,7 @@ LEAGUE_AVG_ERA = 4.10
 LEAGUE_AVG_K_PER_GAME = 8.57
 
 
-def analyze_pitcher(p, league_avg_k_per_game=LEAGUE_AVG_K_PER_GAME):
+def analyze_pitcher(p, league_avg_k_per_game=LEAGUE_AVG_K_PER_GAME, allow_market_check=True):
     """Prints the strikeout-prop breakdown for one pitcher dict."""
     games = p["games"]
     n = len(games)
@@ -157,14 +158,25 @@ def analyze_pitcher(p, league_avg_k_per_game=LEAGUE_AVG_K_PER_GAME):
 
     center = round(final_projection)
     lines = [center - 3 + i for i in range(0, 7, 2)]
+    line_probs = {}
     for line in lines:
         line_half = line - 0.5
         p_over = prob_over(line_half, final_projection, pred_stdev)
+        line_probs[line_half] = p_over
         print(f"  Over {line_half}: {p_over:.1%} chance")
     print()
 
+    if allow_market_check:
+        check = input("Check one of these lines against real market odds? [y/n]: ").strip().lower()
+        if check == "y":
+            chosen = float(input(f"Which line? (one of {list(line_probs.keys())}): ").strip())
+            if chosen in line_probs:
+                prompt_market_check(chosen, line_probs[chosen], already_confirmed=True)
+            else:
+                print("  That's not one of the lines shown above.")
 
-def analyze_batter(b, league_avg_era=LEAGUE_AVG_ERA):
+
+def analyze_batter(b, league_avg_era=LEAGUE_AVG_ERA, allow_market_check=True):
     """
     Prints the H+R+RBI-prop breakdown for one batter dict.
 
@@ -277,9 +289,21 @@ def analyze_batter(b, league_avg_era=LEAGUE_AVG_ERA):
         final_projection = blended
 
     center = round(final_projection)
+    line_probs = {}
     for line in [1.5, 2.5, 3.5]:
         p_over = prob_over(line, final_projection, pred_stdev)
+        line_probs[line] = p_over
         print(f"  Over {line}: {p_over:.1%} chance")
+    print()
+
+    if allow_market_check:
+        check = input("Check one of these lines against real market odds? [y/n]: ").strip().lower()
+        if check == "y":
+            chosen = float(input(f"Which line? (one of {list(line_probs.keys())}): ").strip())
+            if chosen in line_probs:
+                prompt_market_check(chosen, line_probs[chosen], already_confirmed=True)
+            else:
+                print("  That's not one of the lines shown above.")
     print()
 
 
@@ -469,6 +493,6 @@ if __name__ == "__main__":
     ]
 
     for p in pitchers:
-        analyze_pitcher(p)
+        analyze_pitcher(p, allow_market_check=False)
     for b in batters:
-        analyze_batter(b)
+        analyze_batter(b, allow_market_check=False)

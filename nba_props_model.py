@@ -13,6 +13,7 @@ from stats_engine import (
     blend_recent_and_season,
     SITUATIONAL_FACTORS,
 )
+from devig_tool import prompt_market_check
 
 
 def opponent_adjustment_factor(opponent_def_rating, league_avg_def_rating):
@@ -47,8 +48,9 @@ def opponent_adjustment_factor(opponent_def_rating, league_avg_def_rating):
 LEAGUE_AVG_DEF_RATING = 108.51
 
 
-def analyze_player(p, league_avg_def_rating=LEAGUE_AVG_DEF_RATING):
-    """Runs the full projection + prints the breakdown for one player dict."""
+def analyze_player(p, league_avg_def_rating=LEAGUE_AVG_DEF_RATING, allow_market_check=True):
+    """Runs the full projection + prints the breakdown for one player dict.
+    allow_market_check=False for the hardcoded demo (no real odds to check)."""
     games = p["games"]
     n = len(games)
     flat_avg = sum(games) / n
@@ -94,10 +96,21 @@ def analyze_player(p, league_avg_def_rating=LEAGUE_AVG_DEF_RATING):
     # Lines centered around the final projection, in realistic prop increments
     center = round(final_projection)
     lines = [center - 6.5 + i for i in range(0, 12, 3)]
+    line_probs = {}
     for line in lines:
         p_over = prob_over(line, final_projection, pred_stdev)
+        line_probs[line] = p_over
         print(f"  Over {line}: {p_over:.1%} chance")
     print()
+
+    if allow_market_check:
+        check = input("Check one of these lines against real market odds? [y/n]: ").strip().lower()
+        if check == "y":
+            chosen = float(input(f"Which line? (one of {lines}): ").strip())
+            if chosen in line_probs:
+                prompt_market_check(chosen, line_probs[chosen], already_confirmed=True)
+            else:
+                print("  That's not one of the lines shown above.")
 
 
 def interactive_new_player():
@@ -222,4 +235,4 @@ if __name__ == "__main__":
     ]
 
     for p in players:
-        analyze_player(p)
+        analyze_player(p, allow_market_check=False)

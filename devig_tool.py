@@ -77,6 +77,53 @@ def analyze_market(label_a, odds_a, label_b, odds_b, our_prob_a=None):
             print("-> Your model roughly agrees with the market — no meaningful edge either way")
 
 
+def check_prop_edge(line, our_prob_over, over_odds, under_odds):
+    """
+    Purpose-built wrapper around devig_two_way/edge for an over/under PROP
+    (as opposed to a two-team moneyline) — this is what nba_props_model.py
+    and mlb_props_model.py call directly after computing their own
+    probability, so you don't have to re-type numbers into a separate tool.
+    Returns (true_prob_over, edge_pct) and prints the same breakdown as
+    analyze_market.
+    """
+    true_over, true_under, vig_pct = devig_two_way(over_odds, under_odds)
+    e = edge(our_prob_over, true_over)
+
+    print(f"\n--- Market check: over/under {line} ---")
+    print(f"Market odds: Over {over_odds:+d}  |  Under {under_odds:+d}")
+    print(f"Vig/overround: {vig_pct:.2f} percentage points")
+    print(f"De-vigged TRUE market probability of Over: {true_over:.1%}")
+    print(f"Your model's probability of Over: {our_prob_over:.1%}")
+    print(f"Edge vs true market: {e:+.1f} percentage points")
+    if e > 3:
+        print("-> Your model thinks OVER is undervalued by the market (potential edge, IF your model is right)")
+    elif e < -3:
+        print("-> Your model thinks UNDER is the better side (market overvalues Over, IF your model is right)")
+    else:
+        print("-> Your model roughly agrees with the market — no meaningful edge either way")
+
+    return true_over, e
+
+
+def prompt_market_check(line, our_prob_over, already_confirmed=False):
+    """
+    Optional interactive prompt to be called from the end of any prop
+    analysis (NBA/MLB models) — asks if the user wants to check this specific
+    line against real market odds, and if so, does it right there instead of
+    requiring a separate trip to devig_tool.py.
+
+    already_confirmed=True skips the y/n gate (use when the caller already
+    asked "do you want to check odds" itself, to avoid asking twice).
+    """
+    if not already_confirmed:
+        has_odds = input(f"\nCheck this {line} line against real market odds? [y/n]: ").strip().lower()
+        if has_odds != "y":
+            return
+    over_odds = int(input("Market 'Over' American odds (e.g. -115): ").strip())
+    under_odds = int(input("Market 'Under' American odds (e.g. -105): ").strip())
+    check_prop_edge(line, our_prob_over, over_odds, under_odds)
+
+
 def interactive_devig():
     print("\n--- De-vig a market ---")
     label_a = input("Side A name (e.g. team/player): ").strip()
