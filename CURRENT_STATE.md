@@ -171,6 +171,20 @@ stake recommendation right there (bankroll + fraction choice) instead of a
 separate tool. Verified end-to-end on the known 3-pick example: full Kelly
 6.0% (matches 0.2482 - 0.7518/4 by hand), quarter-Kelly $15.07 on $1000.
 
+## Done (2026-08-01): bankroll/ROI tracker built
+
+Built `bankroll_tool.py` + `bankroll_log.csv` — logs real bets (date,
+description, stake, multiplier, won/lost), computes payout/profit per bet,
+and a running report: total staked, total returned, net profit, ROI%, win
+rate, cumulative profit over time. Deliberately separate from
+`calibration_tool.py` — that tracks whether probabilities were accurate,
+this tracks actual money, since you can be well-calibrated and still lose
+money on bad sizing, or vice versa. Verified math with synthetic data
+($30 staked/$50 returned/+$20 profit/+66.7% ROI/50% win rate), then cleared
+the test entries before committing (no fake data in the real log — it's
+genuinely empty, ready for real logging going forward). Added both this and
+`kelly_tool.py` to the launcher's tool list (now 7 tools).
+
 ## ▶ RESUME HERE
 
 **Working through 4 refinement ideas, one at a time**: de-vig integration
