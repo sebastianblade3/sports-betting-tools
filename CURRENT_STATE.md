@@ -185,18 +185,39 @@ the test entries before committing (no fake data in the real log — it's
 genuinely empty, ready for real logging going forward). Added both this and
 `kelly_tool.py` to the launcher's tool list (now 7 tools).
 
+## Done (2026-08-01/02): home/away and rest-day context added — 4th and final refinement idea
+
+**NBA/WNBA**: `HOME_AWAY_FACTOR` (home 1.03/away 0.97 — grounded in real
+research: 0.04-0.16 pts/min home scoring boost, team-dependent, translated
+to a ~3% swing) and `REST_FACTOR` (back-to-back 0.96 — grounded in real
+research: multiple independent studies of tens of thousands of games find a
+well-documented 3-5% scoring decline on zero days rest). Both wired into
+`analyze_player()` via the existing situational_factor pipeline, both
+prompted for in interactive mode.
+
+**MLB**: `BATTER_HOME_AWAY_FACTOR` (home 1.03/away 0.97 — grounded in real
+research: documented 30-50 point home/away OPS gaps league-wide, ~4-7% of
+league-average OPS, used the conservative end) — explicitly a DIFFERENT
+effect from `park_factor` (stadium dimensions) — this is the player's
+personal home-comfort effect regardless of park. `PITCHER_REST_FACTOR`
+(short rest 0.95) — **honestly flagged as the weakest-evidence factor in
+the whole project**: found real research on ERA increasing per pitch
+thrown in the prior start, but couldn't find a clean K-rate-specific short-
+rest effect size, so this is an analogy to the well-documented NBA number,
+not a direct citation. Wired into `analyze_pitcher()` (rest) and
+`analyze_batter()` (home/away), both prompted for in interactive mode.
+Verified all 4 factors compute correctly by hand.
+
+**All 4 refinement ideas from this session are now complete**: de-vig
+integration, Kelly criterion sizing, bankroll/ROI tracker, home/away +
+rest-days context.
+
 ## ▶ RESUME HERE
 
-**Working through 4 refinement ideas, one at a time**: de-vig integration
-done, Kelly criterion done (see above). Next up: **bankroll/ROI tracker**
-(companion to calibration_tool.py, which tracks probability accuracy but not
-actual money won/lost), then home/away + rest-days context (neither sport
-model accounts for this at all currently).
-
-Separately, GUI conversion is in progress: EV Calculator done and working
-(with the Python version fix). Still to convert: De-Vig Calculator,
-Calibration Tracker, NBA/WNBA model, MLB model. Remember to test each with
-the modern Python
+GUI conversion is in progress: EV Calculator done and working (with the
+Python version fix). Still to convert: De-Vig Calculator, Calibration
+Tracker, Kelly tool, Bankroll tracker, NBA/WNBA model, MLB model (7 tools
+total now, only 1 converted). Remember to test each with the modern Python
 (`/Library/Frameworks/Python.framework/Versions/3.13/bin/python3`), not the
 system one, to avoid re-hitting the Tk 8.5 rendering bug.
 
